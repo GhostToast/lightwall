@@ -12,11 +12,11 @@ Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(8, 8, 7, 2, PIN,
   NEO_GRBW           + NEO_KHZ800
 );
 
-const uint16_t matrix_width = 56;
-const uint16_t matrix_height = 8;
+const uint16_t matrixWidth = 56;
+const uint16_t matrixHeight = 8;
 
-// Pacman.
-const unsigned short pacman[72] PROGMEM={
+// Pacman (mouth) open.
+const unsigned short pacmanOpen[72] PROGMEM={
 0x0000, 0x0000, 0x39E0, 0x9CE0, 0xBDE0, 0xAD20, 0x5280, 0x0000, 0x0000, 0x7BE0, 0xF780, 0xF780, 0xF780, 0xF780, 0xF780, 0x6B40,   // 0x0010 (16) pixels
 0x4220, 0xF780, 0xF780, 0xF780, 0x6B60, 0xE700, 0x8C60, 0x0000, 0xA520, 0xF780, 0xF780, 0xF780, 0xE700, 0x7380, 0x0000, 0x0000,   // 0x0020 (32) pixels
 0xBDE0, 0xF780, 0xF780, 0xF780, 0xAD40, 0x0000, 0x0000, 0x0000, 0x9CC0, 0xF780, 0xF780, 0xF780, 0xF780, 0x7380, 0x0000, 0x0000,   // 0x0030 (48) pixels
@@ -24,7 +24,7 @@ const unsigned short pacman[72] PROGMEM={
 };
 
 // Pacman (mouth) shut.
-const unsigned short pacman_shut[72] PROGMEM={
+const unsigned short pacmanShut[72] PROGMEM={
 0x0000, 0x0000, 0x39E0, 0x9CE0, 0xBDE0, 0xA500, 0x5280, 0x0000, 0x0000, 0x7BE0, 0xF780, 0xF780, 0xF780, 0xF780, 0xF780, 0x6B40,   // 0x0010 (16) pixels
 0x4220, 0xF780, 0xF780, 0xF780, 0x6B60, 0xE700, 0xE700, 0x2940, 0xA520, 0xF780, 0xF780, 0xEF20, 0xEF40, 0xEF40, 0xEF40, 0xE700,   // 0x0020 (32) pixels
 0xBDE0, 0xF780, 0xF780, 0xA500, 0x9CA0, 0x8C40, 0x8C20, 0x94A0, 0x9CC0, 0xF780, 0xF780, 0xF780, 0xEF40, 0xE720, 0xEF40, 0xE700,   // 0x0030 (48) pixels
@@ -33,29 +33,37 @@ const unsigned short pacman_shut[72] PROGMEM={
 
 
 void setup() {
+  Serial.begin(115200); 
   matrix.begin();
   matrix.setBrightness(40);
 }
 
 
 void loop() {
-  pacman_animation();
+  pacmanAnimation(50);
 }
 
-void pacman_animation() {
-  matrix.fillScreen(0);
+void pacmanAnimation(uint8_t pacmanSpeed) {
+
+  static unsigned long lastAnimation = 0;
 
   // Scroll across the screen's width.
-  for ( uint16_t i = 0; i<matrix_width; i++ ) {
-    // Even/odd counter for whether to show mouth open or closed.
-    if ( i & 1 ) {
-      matrix.drawRGBBitmap(i, 8, (const uint16_t *) pacman, 8, 8);
-    } else {
-      matrix.drawRGBBitmap(i, 8, (const uint16_t *) pacman_shut, 8, 8);
+  for ( uint16_t i = 0; i<matrixWidth;) {
+    if(millis() - lastAnimation > pacmanSpeed) {
+      i++;
+      lastAnimation = millis();
+
+      // Even/odd counter for whether to show mouth open or closed.
+      if ( i & 1 ) {
+        matrix.clear();
+        matrix.drawRGBBitmap(i, 8, (const uint16_t *) pacmanOpen, 8, 8);
+        matrix.show();
+      } else {
+        matrix.clear();
+        matrix.drawRGBBitmap(i, 8, (const uint16_t *) pacmanShut, 8, 8);
+        matrix.show();
+      }
     }
-    matrix.show();
-    delay(50);  
-    matrix.clear();
   }
 }
 

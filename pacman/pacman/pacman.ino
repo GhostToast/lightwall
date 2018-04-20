@@ -74,7 +74,6 @@ void pacmanAnimation(uint8_t pacmanSpeed) {
     if(millis() - lastAnimation > pacmanSpeed) {
       i++;
       lastAnimation = millis();
-
       drawPacmanFrame(i);
     }
   }
@@ -84,15 +83,15 @@ void pacmanAnimation(uint8_t pacmanSpeed) {
  * Advance Pacman's animation 1 frame.
  */
 void drawPacmanFrame(uint8_t frame) {
+  short pattern;
   // Even/odd counter for whether to show mouth open or closed.
-  if ( i & 1 ) {
-    matrix.clear();
-    matrix.drawRGBBitmap(i, 8, (const uint16_t *) pacmanOpen, 8, 8);
-    matrix.show();
+  if ( frame & 1 ) {
+    pattern = pacmanOpen;
   } else {
-    matrix.clear();
-    matrix.drawRGBBitmap(i, 8, (const uint16_t *) pacmanShut, 8, 8);
-    matrix.show();
+    pattern = pacmanShut;
   }
+  matrix.clear();
+  matrix.drawRGBBitmap(frame, 8, (const uint16_t *) pattern, 8, 8);
+  matrix.show();
 }
 

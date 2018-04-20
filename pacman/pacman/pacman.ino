@@ -39,7 +39,12 @@ void setup() {
 
 
 void loop() {
+  pacman_animation();
+}
+
+void pacman_animation() {
   matrix.fillScreen(0);
+
   // Scroll across the screen's width.
   for ( uint16_t i = 0; i<matrix_width; i++ ) {
     // Even/odd counter for whether to show mouth open or closed.
@@ -50,7 +55,7 @@ void loop() {
     }
     matrix.show();
     delay(50);  
-    //matrix.clear();
+    matrix.clear();
   }
 }
 

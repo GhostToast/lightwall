@@ -21,7 +21,7 @@ Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(WIDTH, HEIGHT,PIN,
 /**
  * LED order in a given block.
  */
-const uint16_t block[][8] = {
+const uint8_t block[8][8] = {
   {0,  15,  16,  31,  32,  47,  48,  63},
   {1,  14,  17,  30,  33,  46,  49,  62},
   {2,  13,  18,  29,  34,  45,  50,  61},
@@ -35,7 +35,7 @@ const uint16_t block[][8] = {
 /**
  * The entire grid, including fake panels (denoated with -1).
  */
-const uint16_t grid[][7] = {
+const uint8_t grid[4][7] = {
   { 0,  -1,   4,  -1,   8,  -1,  12},
   {-1,   2,  -1,   6,  -1,  10,  -1},
   { 1,  -1,   5,  -1,   9,  -1,  13},

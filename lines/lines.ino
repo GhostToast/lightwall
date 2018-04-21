@@ -42,16 +42,30 @@ const uint16_t grid[][7] = {
   {-1,   3,  -1,   7,  -1,  11,  -1}
 };
 
-/**
- * Remap X and Y to accomodate spacers.
- */
 uint16_t remapXY(uint16_t x, uint16_t y) {
-  uint16_t pixelBlock = grid[y/8][x/8];
-  if (-1 == pixelBlock) {
-    return pixelBlock;
-  }
-  pixelBlock = pixelBlock * 64 + block[y%8][x%8];
-  return pixelBlock;
+
+    // Compute panel position and offset of pixel within that panel.
+    uint8_t pannel_x = x / 8;
+    uint8_t offset_x = x % 8;
+    uint8_t pannel_y = y / 8;
+    uint8_t offset_y = y % 8;
+
+    // Is this a missing panel?
+    if ((pannel_x + pannel_y) & 1)
+        return -1;
+
+    // Compute panel number.
+    uint8_t pannel = pannel_y / 2 + pannel_x * 2;
+
+    // LED index within the panel.
+    uint8_t led = 8 * offset_x;
+
+    if (offset_x & 1)  // numbered bottom to top
+        led += 7 - offset_y;
+    else               // numbered top to bottom
+        led += offset_y;
+
+    return pannel * 64 + led;
 }
 
 /**

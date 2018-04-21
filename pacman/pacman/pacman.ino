@@ -78,7 +78,6 @@ const unsigned short pacmanShut[72] PROGMEM={
  * Setup.
  */
 void setup() {
-  //Serial.begin(115200); 
   matrix.setRemapFunction(remapXY);
   matrix.begin();
   matrix.setBrightness(40);

@@ -67,12 +67,12 @@ const uint16_t block[][7] = {
 };
 
 uint16_t remapXY(uint16_t x, uint16_t y) {
-  uint16_t blockNumber = block[y/8][x/8];
-  if (-1 == blockNumber) {
-    return blockNumber;
+  uint16_t pixelBlock = block[y/8][x/8];
+  if (-1 == pixelBlock) {
+    return pixelBlock;
   }
-  uint16_t pixelNumber = blockNumber * 64 + grid[y%8][x%8];
-  return pixelNumber;
+  pixelBlock = pixelBlock * 64 + grid[y%8][x%8];
+  return pixelBlock;
 }
 
 /**

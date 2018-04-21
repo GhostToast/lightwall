@@ -98,32 +98,32 @@ void loop() {
 void pacmanAnimation(uint8_t pacmanSpeed) {
   static unsigned long lastAnimation = 0;
 
-  for (uint8_t j = 0; j<HEIGHT;) {
+  for (uint8_t y = 0; y<HEIGHT;) {
     // Scroll across the screen's width.
-    for ( uint16_t i = 0; i<WIDTH;) {
+    for ( uint16_t x = 0; x<WIDTH;) {
       if(millis() - lastAnimation > pacmanSpeed) {
-        i++;
+        x++;
         lastAnimation = millis();
-        drawPacmanFrame(i, j);
+        drawPacmanFrame(x, y);
       }
     }
-    j = j + 8;
+    y = y + 8;
   }
 }
 
 /**
  * Advance Pacman's animation 1 frame.
  */
-void drawPacmanFrame(uint8_t frame, uint8_t loops ) {
+void drawPacmanFrame(uint8_t x, uint8_t y ) {
   short pattern;
   // Even/odd counter for whether to show mouth open or closed.
-  if ( frame & 1 ) {
+  if ( x & 1 ) {
     pattern = pacmanOpen;
   } else {
     pattern = pacmanShut;
   }
   matrix.clear();
-  matrix.drawRGBBitmap(frame, loops, (const uint16_t *) pattern, 8, 8);
+  matrix.drawRGBBitmap(x, y, (const uint16_t *) pattern, 8, 8);
   matrix.show();
 }
 

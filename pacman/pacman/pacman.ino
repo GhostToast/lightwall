@@ -19,16 +19,6 @@ Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(WIDTH, HEIGHT,PIN,
 );
 
 /**
- * Overall width of entire matrix in pixels.
- */
-const uint16_t matrixWidth = 56;
-
-/**
- * Overall height of entire matrix in pixels.
- */
-const uint16_t matrixHeight = 16;
-
-/**
  * Pacman (mouth) open.
  */
 const unsigned short pacmanOpen[72] PROGMEM={
@@ -48,7 +38,10 @@ const unsigned short pacmanShut[72] PROGMEM={
 0x3180, 0xEF60, 0xF780, 0xF780, 0xF780, 0xF760, 0xE700, 0x4220, 0x0000, 0x5AC0, 0xEF40, 0xF780, 0xF780, 0xF780, 0xEF40, 0x2120,   // 0x0040 (64) pixels
 };
 
-const uint16_t grid[][8] = {
+/**
+ * LED order in a given block.
+ */
+const uint16_t block[][8] = {
   {0,  15,  16,  31,  32,  47,  48,  63},
   {1,  14,  17,  30,  33,  46,  49,  62},
   {2,  13,  18,  29,  34,  45,  50,  61},
@@ -59,19 +52,25 @@ const uint16_t grid[][8] = {
   {7,   8,  23,  24,  39,  40,  55,  56}
 };
 
-const uint16_t block[][7] = {
+/**
+ * The entire grid, including fake panels (denoated with -1).
+ */
+const uint16_t grid[][7] = {
   { 0,  -1,   4,  -1,   8,  -1,  12},
   {-1,   2,  -1,   6,  -1,  10,  -1},
   { 1,  -1,   5,  -1,   9,  -1,  13},
   {-1,   3,  -1,   7,  -1,  11,  -1}
 };
 
+/**
+ * Remap X and Y to accomodate spacers.
+ */
 uint16_t remapXY(uint16_t x, uint16_t y) {
-  uint16_t pixelBlock = block[y/8][x/8];
+  uint16_t pixelBlock = grid[y/8][x/8];
   if (-1 == pixelBlock) {
     return pixelBlock;
   }
-  pixelBlock = pixelBlock * 64 + grid[y%8][x%8];
+  pixelBlock = pixelBlock * 64 + block[y%8][x%8];
   return pixelBlock;
 }
 
@@ -99,20 +98,23 @@ void loop() {
 void pacmanAnimation(uint8_t pacmanSpeed) {
   static unsigned long lastAnimation = 0;
 
-  // Scroll across the screen's width.
-  for ( uint16_t i = 0; i<WIDTH;) {
-    if(millis() - lastAnimation > pacmanSpeed) {
-      i++;
-      lastAnimation = millis();
-      drawPacmanFrame(i);
+  for (uint8_t j = 0; j<HEIGHT;) {
+    // Scroll across the screen's width.
+    for ( uint16_t i = 0; i<WIDTH;) {
+      if(millis() - lastAnimation > pacmanSpeed) {
+        i++;
+        lastAnimation = millis();
+        drawPacmanFrame(i, j);
+      }
     }
+    j = j + 8;
   }
 }
 
 /**
  * Advance Pacman's animation 1 frame.
  */
-void drawPacmanFrame(uint8_t frame) {
+void drawPacmanFrame(uint8_t frame, uint8_t loops ) {
   short pattern;
   // Even/odd counter for whether to show mouth open or closed.
   if ( frame & 1 ) {
@@ -121,7 +123,7 @@ void drawPacmanFrame(uint8_t frame) {
     pattern = pacmanShut;
   }
   matrix.clear();
-  matrix.drawRGBBitmap(frame, 0, (const uint16_t *) pattern, 8, 8);
+  matrix.drawRGBBitmap(frame, loops, (const uint16_t *) pattern, 8, 8);
   matrix.show();
 }
 

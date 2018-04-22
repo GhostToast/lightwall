@@ -139,7 +139,6 @@ void loop() {
  * Make Pacman Move.
  */
 void pacmanAnimation(uint8_t pacmanSpeed) {
-  uint8_t r = 0;
 
   // Run along each row.
   for (uint8_t y = 0; y<matrix.height()/8; y++) {

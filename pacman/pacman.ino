@@ -6,23 +6,11 @@
   #include <avr/power.h>
 #endif
 
-#define PIN          6
-#define WIDTH       56 // Actual row in pixels.
-#define HEIGHT      32 // Fake: accounts for 2*8 additional empty pixels per column.
-#define BRIGHTNESS  50
-#define NUM_LEDS   896
-
-/**
- * Setup the lightwall matrix.
- * 
- * Each panel is 8x8 pixels. There are 7 columns and 2 rows but they are arranged in a checkerboard pattern.
- * We fake to the matrix that we have twice as much height to create a believable offset of negative space.
- */
-Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(WIDTH, HEIGHT, PIN,
-  NEO_MATRIX_TOP     + NEO_MATRIX_LEFT +
-  NEO_MATRIX_COLUMNS + NEO_MATRIX_ZIGZAG,
-  NEO_GRBW           + NEO_KHZ800
-);
+const int PIN        =   6;
+const int WIDTH      =  56; // Actual row in pixels.
+const int HEIGHT     =  32; // Fake: accounts for 2*8 additional empty pixels per column.
+const int BRIGHTNESS =  50;
+const int NUM_LEDS   = 896;
 
 /**
  * LED order in a given block.
@@ -47,18 +35,6 @@ const uint8_t grid[4][7] = {
   { 1,  -1,   5,  -1,   9,  -1,  13},
   {-1,   3,  -1,   7,  -1,  11,  -1}
 };
-
-/**
- * Remap X and Y to accomodate spacers.
- */
-uint16_t remapXY(uint16_t x, uint16_t y) {
-  uint16_t pixelBlock = grid[y/8][x/8];
-  if (-1 == pixelBlock) {
-    return pixelBlock;
-  }
-  pixelBlock = pixelBlock * 64 + block[y%8][x%8];
-  return pixelBlock;
-}
 
 /**
  * Pacman's open and shut frames, in both left and right variants.
@@ -116,6 +92,20 @@ const unsigned short pacman[2][2][72] PROGMEM={
   }
 };
 
+long lastAnimation = 0;
+
+/**
+ * Setup the lightwall matrix.
+ * 
+ * Each panel is 8x8 pixels. There are 7 columns and 2 rows but they are arranged in a checkerboard pattern.
+ * We fake to the matrix that we have twice as much height to create a believable offset of negative space.
+ */
+Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(WIDTH, HEIGHT, PIN,
+  NEO_MATRIX_TOP     + NEO_MATRIX_LEFT +
+  NEO_MATRIX_COLUMNS + NEO_MATRIX_ZIGZAG,
+  NEO_GRBW           + NEO_KHZ800
+);
+
 /**
  * Setup.
  */
@@ -123,7 +113,18 @@ void setup() {
   matrix.setRemapFunction(remapXY);
   matrix.setBrightness(BRIGHTNESS);
   matrix.begin();
-  
+}
+
+/**
+ * Remap X and Y to accomodate spacers.
+ */
+uint16_t remapXY(uint16_t x, uint16_t y) {
+  uint16_t pixelBlock = grid[y/8][x/8];
+  if (-1 == pixelBlock) {
+    return pixelBlock;
+  }
+  pixelBlock = pixelBlock * 64 + block[y%8][x%8];
+  return pixelBlock;
 }
 
 /**
@@ -138,7 +139,6 @@ void loop() {
  * Make Pacman Move.
  */
 void pacmanAnimation(uint8_t pacmanSpeed) {
-  static unsigned long lastAnimation = 0;
   uint8_t r = 0;
 
   // Run along each row.

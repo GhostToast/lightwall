@@ -96,17 +96,33 @@ void loop() {
  */
 void pacmanAnimation(uint8_t pacmanSpeed) {
   static unsigned long lastAnimation = 0;
+  uint8_t r = 0;
 
-  for (uint8_t y = 0; y<HEIGHT/8;) {
+  // Run along each row.
+  for (uint8_t y = 0; y<matrix.height()/8; y++) {
+    // Change offset based on value of y as this display will be rotated with each iteration.
+    if (y==1||y==2) {
+      r = 2;
+    } else {
+      r = 0;
+    }
+
+    // Rotate the display every operation, back and forth 180 degrees.
+    if (y%2) {
+      matrix.setRotation(2);  
+    } else {
+      matrix.setRotation(0);
+    }
+    
+    
     // Scroll across the screen's width.
-    for ( uint16_t x = 0; x<WIDTH;) {
+    for (uint16_t x = 0; x<matrix.width();) {
       if(millis() - lastAnimation > pacmanSpeed) {
         x++;
         lastAnimation = millis();
-        drawPacmanFrame(x, y);
+        drawPacmanFrame(x, r);
       }
     }
-    y++;
   }
 }
 

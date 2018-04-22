@@ -126,7 +126,7 @@ void pacmanAnimation(uint8_t pacmanSpeed) {
       if(millis() - lastAnimation > pacmanSpeed) {
         x++;
         lastAnimation = millis();
-        if (y%2) {
+        if (y & 1) {
           // Run left.
           drawPacmanFrame(matrix.width()-x, y, 1);
         } else {
@@ -144,7 +144,7 @@ void pacmanAnimation(uint8_t pacmanSpeed) {
 void drawPacmanFrame(uint8_t x, uint8_t y, uint8_t r ) {
   uint8_t pattern;
   // Even/odd counter for whether to show mouth open or closed.
-  if ( x & 1 ) {
+  if (x & 1) {
     pattern = 0;
   } else {
     pattern = 1;

@@ -145,10 +145,11 @@ void pacmanAnimation(uint8_t pacmanSpeed) {
 
     // Scroll across the screen's width.
     for (uint16_t x = 0; x<matrix.width();) {
+      unsigned long currentTime = millis();
       // Timer to avoid using delay().
-      if(millis() - lastAnimation > pacmanSpeed) {
+      if(currentTime - lastAnimation >= pacmanSpeed) {
         x++;
-        lastAnimation = millis();
+        lastAnimation = currentTime;
         if (y & 1) {
           // Run left.
           drawPacmanFrame(matrix.width()-x, y, 1);

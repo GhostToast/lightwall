@@ -1,3 +1,5 @@
+#include <xmem.h>
+
 #include <Adafruit_GFX.h>
 #include <Adafruit_NeoMatrix.h>
 #include <Adafruit_NeoPixel.h>
@@ -110,6 +112,11 @@ Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(WIDTH, HEIGHT, PIN,
  * Setup.
  */
 void setup() {
+  Serial.begin(115200);
+
+  // Attempt to setup and utilize initial memory bank for malloc/free.
+  xmem::begin(true);
+  
   matrix.setRemapFunction(remapXY);
   matrix.setBrightness(BRIGHTNESS);
   matrix.begin();
@@ -132,6 +139,7 @@ uint16_t remapXY(uint16_t x, uint16_t y) {
  */
 void loop() {
   matrix.fillScreen(0);
+  fillDots(3);
   pacmanAnimation(30);
 }
 
@@ -144,7 +152,7 @@ void pacmanAnimation(uint8_t pacmanSpeed) {
   for (uint8_t y = 0; y<matrix.height()/8; y++) {
 
     // Scroll across the screen's width.
-    for (uint16_t x = 0; x<matrix.width();) {
+    for (uint8_t x = 0; x< WIDTH;) {
       unsigned long currentTime = millis();
       // Timer to avoid using delay().
       if(currentTime - lastAnimation >= pacmanSpeed) {
@@ -152,7 +160,7 @@ void pacmanAnimation(uint8_t pacmanSpeed) {
         lastAnimation = currentTime;
         if (y & 1) {
           // Run left.
-          drawPacmanFrame(matrix.width()-x, y, 1);
+          drawPacmanFrame(WIDTH - x, y, 1);
         } else {
           // Run right.
           drawPacmanFrame(x, y, 0);
@@ -160,6 +168,18 @@ void pacmanAnimation(uint8_t pacmanSpeed) {
       }
     }
   }
+}
+
+/**
+ * Fill screen with dots for Pacman to eat.
+ */
+void fillDots(uint8_t spacing) {
+  for (uint8_t y = 3; y<=HEIGHT; y=y+8) {
+    for (uint8_t i = (spacing-1); i < WIDTH; i=i+spacing) {
+      matrix.drawPixel(i, y, matrix.Color(255,255,255));
+    }
+  }
+  matrix.show();
 }
 
 /**
@@ -173,8 +193,18 @@ void drawPacmanFrame(uint8_t x, uint8_t y, uint8_t r ) {
   } else {
     pattern = 1;
   }
-  matrix.clear();
+
+  // Draw Pacman.
   matrix.drawRGBBitmap(x, y*8, (const uint16_t *) pacman[r][pattern], 8, 8);
+
+  // Clear a path behind Pacman.
+  for (uint8_t i = y*8; i<(y*8)+8; i++) {
+    if (r & 1) {
+      matrix.drawPixel(x+8, i, 0);
+    } else {
+      matrix.drawPixel(x-r, i, 0);
+    }
+  }
   matrix.show();
 }
 

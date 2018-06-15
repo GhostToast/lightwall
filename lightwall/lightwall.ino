@@ -53,6 +53,7 @@ unsigned long eepromLastUpdate = 0;
 unsigned long currentTime = 0;
 
 rainColumn testColumn;
+rainColumn testColumn2;
 
 // Setup it up.
 void setup() {
@@ -63,89 +64,102 @@ void setup() {
 
   Entropy.initialize();
 
-  testColumn = {
-    0, // column
-    14, // height
-    strip.Color(Entropy.random(0, 32), Entropy.random(175, 256), Entropy.random(0, 32), 0), // color1
-    strip.Color(Entropy.random(0, 32), Entropy.random(175, 256), Entropy.random(0, 32), 0), // color2
-    0, // running
-    2000, // sleepTime
-    15, // interval
-    0, // lastUpdated
-    0, // lastCompleted
-  };
+  assignColumnProperties( testColumn );
+  assignColumnProperties( testColumn2 );
+
+  byte column;                 // which column this represents on the X axis.
+  byte head;                   // which pixel is being processed as the head.
+  byte height;                 // how many pixels tall this streamer should be.
+  byte isRunning;              // whether this animation is currently playing.
+  uint32_t color;              // the color to initialize at.
+  uint16_t interval;           // how long to wait between animation frames.
+  uint16_t sleepTime;          // how long to wait before re-animating.
+  unsigned long lastUpdated;   // how long ago this column animated a frame.
+  unsigned long lastCompleted; // how long ago this column completed full animation.
 
   readEEPROM();
+}
+
+// Assign Column Properties. Mostly random, maintain column, lastUpdated, and lastCompleted.
+void assignColumnProperties( rainColumn &rainColumn ) {
+  rainColumn = {
+    rainColumn.column, // column. maintained.
+    0, // head
+    Entropy.random(6,32), // height
+    0, // isRunning
+    Entropy.random(5,64), // dimAmount
+    strip.Color(Entropy.random(0, 32), Entropy.random(175, 256), Entropy.random(0, 32), 0), // color
+    Entropy.random(15,850), // interval
+    Entropy.random(500,3000), // sleepTime
+    rainColumn.lastUpdated, // lastUpdated. maintained.
+    rainColumn.lastCompleted, // lastCompleted. maintained.
+  };
 }
 
 // The main loop.
 void loop() {
   //processUserInput();
   //displayUserSelectedMode();
-  //testStrip();
   testRainColumn();
 }
 
 void testRainColumn() {
   currentTime = millis();
+  // Is it time to start a new sequence?
   if( (currentTime - testColumn.lastCompleted ) >= testColumn.sleepTime ) {
     testColumn.isRunning = 1;
   }
+
   if( testColumn.isRunning == 1 ) {
-    if( (currentTime - testColumn.lastUpdated ) >= testColumn.interval ) {
-      updateRainColumnFrame();
-      testColumn.lastUpdated = currentTime;
+    // Begin animation at top (0).
+    testColumn.head = 0;
+
+    // Draw further down than our canvas so things don't end abruptly.
+    while(testColumn.head<=maxHeight*2) {
+
+      // Reassess the time in this loop.
+      currentTime = millis();
+
+      // Only animate if enough time has passed. This allows each column to have its own speed.
+      if( (currentTime - testColumn.lastUpdated ) >= testColumn.interval ) {
+
+        // Run the animation!
+        updateRainColumnFrame( testColumn );
+
+        // Increase head of the streamer, and set lastUpdated time.
+        testColumn.head++;
+        testColumn.lastUpdated = currentTime;
+      }
     }
+
+    // Inform that the animation has terminated, and set lastCompleted time.
+    testColumn.isRunning = 0;
+    testColumn.lastCompleted = millis();
+
+    // Build new properties so the next streamer in this column will not be identical to this one.
+    assignColumnProperties( testColumn );
   }
 }
 
-void updateRainColumnFrame() {
-  for(uint8_t y=0; y<=maxHeight*2; y++) {
-    strip.setPixelColor(remapXY(testColumn.column,y), testColumn.color1);
-    if ( y > testColumn.height ) {
-      for(uint8_t oldY=y-8; oldY>=0; oldY--) {
+void updateRainColumnFrame(rainColumn &rainColumn) {
+  
+    strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head), rainColumn.color);
+
+    // Dim the tail.
+    if ( rainColumn.head > rainColumn.height ) {
+      for(uint8_t tail=rainColumn.head-rainColumn.height; tail>=0; tail--) {
         // Prevent wraparound.
-        if ( oldY == 255 ) {
+        if ( tail == 255 ) {
           break;
         }
-        uint16_t oldPixel = remapXY(testColumn.column,oldY);
+        uint16_t oldPixel = remapXY(rainColumn.column,tail);
         if ( -1 != oldPixel ) {
-          strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel)));
+          strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel), rainColumn.dimAmount));
         }
       }
     }
     
     strip.show();
-    //delay(2000);
-  }
-}
-
-// Testing grid.
-void testStrip() {
-  uint16_t x = Entropy.random(maxWidth);
-  
-  uint32_t color = strip.Color(Entropy.random(0, 32), Entropy.random(175, 256), Entropy.random(0, 32), 0);
-  //uint32_t color = Wheel(x & 255 );
-  for(uint8_t y=0; y<=maxHeight*2; y++) {
-      strip.setPixelColor(remapXY(x,y), color);
-      if ( y > 16 ) {
-        for(uint8_t oldY=y-8; oldY>=0; oldY--) {
-          // Prevent wraparound.
-          if ( oldY == 255 ) {
-            testColumn.isRunning = 0;
-            testColumn.lastCompleted = millis();
-            break;
-          }
-          uint16_t oldPixel = remapXY(x,oldY);
-          if ( -1 != oldPixel ) {
-            strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel)));
-          }
-        }
-      }
-      
-      strip.show();
-      //delay(2000);
-  }
 }
 
 // Listen for user input and process it, populating variables.
@@ -226,10 +240,10 @@ void oneColor(uint32_t color) {
   strip.show();
 }
 
-// Calculate 50% dimmed version of a color.
-uint32_t dimColor(uint32_t color) {
-    // Shift R, G and B components one bit to the right
-    uint32_t dimColor = strip.Color(red(color) >> 1, green(color) >> 1, blue(color) >> 1, 0);
+// Calculate diminishing version of a color.
+uint32_t dimColor(uint32_t color, byte dimAmount) {
+    // Subtract R, G and B components until zero.
+    uint32_t dimColor = strip.Color( max(0,red(color)-dimAmount), max(0,green(color)-dimAmount), max(0,blue(color)-dimAmount), 0);
     return dimColor;
 }
 

@@ -52,6 +52,8 @@ unsigned long eepromThrottleInterval = 500;
 unsigned long eepromLastUpdate = 0;
 unsigned long currentTime = 0;
 
+rainColumn testColumn;
+
 // Setup it up.
 void setup() {
   Serial.begin(115200);
@@ -61,14 +63,61 @@ void setup() {
 
   Entropy.initialize();
 
+  testColumn = {
+    0, // column
+    14, // height
+    strip.Color(Entropy.random(0, 32), Entropy.random(175, 256), Entropy.random(0, 32), 0), // color1
+    strip.Color(Entropy.random(0, 32), Entropy.random(175, 256), Entropy.random(0, 32), 0), // color2
+    0, // running
+    2000, // sleepTime
+    15, // interval
+    0, // lastUpdated
+    0, // lastCompleted
+  };
+
   readEEPROM();
 }
 
 // The main loop.
 void loop() {
-  processUserInput();
-  displayUserSelectedMode();
+  //processUserInput();
+  //displayUserSelectedMode();
   //testStrip();
+  testRainColumn();
+}
+
+void testRainColumn() {
+  currentTime = millis();
+  if( (currentTime - testColumn.lastCompleted ) >= testColumn.sleepTime ) {
+    testColumn.isRunning = 1;
+  }
+  if( testColumn.isRunning == 1 ) {
+    if( (currentTime - testColumn.lastUpdated ) >= testColumn.interval ) {
+      updateRainColumnFrame();
+      testColumn.lastUpdated = currentTime;
+    }
+  }
+}
+
+void updateRainColumnFrame() {
+  for(uint8_t y=0; y<=maxHeight*2; y++) {
+    strip.setPixelColor(remapXY(testColumn.column,y), testColumn.color1);
+    if ( y > testColumn.height ) {
+      for(uint8_t oldY=y-8; oldY>=0; oldY--) {
+        // Prevent wraparound.
+        if ( oldY == 255 ) {
+          break;
+        }
+        uint16_t oldPixel = remapXY(testColumn.column,oldY);
+        if ( -1 != oldPixel ) {
+          strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel)));
+        }
+      }
+    }
+    
+    strip.show();
+    //delay(2000);
+  }
 }
 
 // Testing grid.
@@ -83,6 +132,8 @@ void testStrip() {
         for(uint8_t oldY=y-8; oldY>=0; oldY--) {
           // Prevent wraparound.
           if ( oldY == 255 ) {
+            testColumn.isRunning = 0;
+            testColumn.lastCompleted = millis();
             break;
           }
           uint16_t oldPixel = remapXY(x,oldY);

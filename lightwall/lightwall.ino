@@ -37,6 +37,7 @@ const uint8_t grid[4][7] = {
 };
 
 #define maxChars 16
+rainColumn allRainColumns[1]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
 char inputString[maxChars];
@@ -52,9 +53,6 @@ unsigned long eepromThrottleInterval = 500;
 unsigned long eepromLastUpdate = 0;
 unsigned long currentTime = 0;
 
-rainColumn testColumn;
-rainColumn testColumn2;
-
 // Setup it up.
 void setup() {
   Serial.begin(115200);
@@ -64,24 +62,30 @@ void setup() {
 
   Entropy.initialize();
 
-  assignColumnProperties( testColumn );
-  assignColumnProperties( testColumn2 );
+  for( byte i=0; i<sizeof allRainColumns; i++) {
+    allRainColumns[i].column = i;
+    assignColumnProperties( allRainColumns[i] );
+  }
 
-  byte column;                 // which column this represents on the X axis.
-  byte head;                   // which pixel is being processed as the head.
-  byte height;                 // how many pixels tall this streamer should be.
-  byte isRunning;              // whether this animation is currently playing.
-  uint32_t color;              // the color to initialize at.
-  uint16_t interval;           // how long to wait between animation frames.
-  uint16_t sleepTime;          // how long to wait before re-animating.
-  unsigned long lastUpdated;   // how long ago this column animated a frame.
-  unsigned long lastCompleted; // how long ago this column completed full animation.
+  //readEEPROM();
+}
 
-  readEEPROM();
+// The main loop.
+void loop() {
+  //processUserInput();
+  //displayUserSelectedMode();
+  makeItRain();
+}
+
+void makeItRain() {
+  for( byte i=0; i<sizeof allRainColumns; i++) {
+    rainOneColumn( allRainColumns[i] );
+  }
 }
 
 // Assign Column Properties. Mostly random, maintain column, lastUpdated, and lastCompleted.
 void assignColumnProperties( rainColumn &rainColumn ) {
+  currentTime = millis();
   rainColumn = {
     rainColumn.column, // column. maintained.
     0, // head
@@ -94,50 +98,45 @@ void assignColumnProperties( rainColumn &rainColumn ) {
     rainColumn.lastUpdated, // lastUpdated. maintained.
     rainColumn.lastCompleted, // lastCompleted. maintained.
   };
+
+  // If this is the first iteration, assign sometime between now and near future for our initial state.
+  if( rainColumn.lastCompleted == 0 ) {
+    rainColumn.lastCompleted = Entropy.random(currentTime, currentTime+20000);
+  }
 }
 
-// The main loop.
-void loop() {
-  //processUserInput();
-  //displayUserSelectedMode();
-  testRainColumn();
-}
-
-void testRainColumn() {
+void rainOneColumn( rainColumn &rainColumn ) {
   currentTime = millis();
   // Is it time to start a new sequence?
-  if( (currentTime - testColumn.lastCompleted ) >= testColumn.sleepTime ) {
-    testColumn.isRunning = 1;
+  if( (currentTime - rainColumn.lastCompleted ) >= rainColumn.sleepTime ) {
+    rainColumn.isRunning = 1;
   }
 
-  if( testColumn.isRunning == 1 ) {
+  if( rainColumn.isRunning == 1 ) {
     // Begin animation at top (0).
-    testColumn.head = 0;
+    rainColumn.head = 0;
 
-    // Draw further down than our canvas so things don't end abruptly.
-    while(testColumn.head<=maxHeight*2) {
+    // Only animate if enough time has passed. This allows each column to have its own speed.
+    if( (currentTime - rainColumn.lastUpdated ) >= rainColumn.interval ) {
 
-      // Reassess the time in this loop.
-      currentTime = millis();
+      // Run the animation!
+      updateRainColumnFrame( rainColumn );
 
-      // Only animate if enough time has passed. This allows each column to have its own speed.
-      if( (currentTime - testColumn.lastUpdated ) >= testColumn.interval ) {
-
-        // Run the animation!
-        updateRainColumnFrame( testColumn );
-
-        // Increase head of the streamer, and set lastUpdated time.
-        testColumn.head++;
-        testColumn.lastUpdated = currentTime;
-      }
+      // Increase head of the streamer, and set lastUpdated time.
+      rainColumn.head++;
+      rainColumn.lastUpdated = currentTime;
     }
 
-    // Inform that the animation has terminated, and set lastCompleted time.
-    testColumn.isRunning = 0;
-    testColumn.lastCompleted = millis();
+    // Draw further down than our canvas so things don't end abruptly.
+    if( rainColumn.head >= maxHeight*2 ) {
 
-    // Build new properties so the next streamer in this column will not be identical to this one.
-    assignColumnProperties( testColumn );
+      // Inform that the animation has terminated, and set lastCompleted time.
+      rainColumn.isRunning = 0;
+      rainColumn.lastCompleted = millis();
+  
+      // Build new properties so the next streamer in this column will not be identical to this one.
+      assignColumnProperties( rainColumn );  
+    }
   }
 }
 

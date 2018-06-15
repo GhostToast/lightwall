@@ -37,7 +37,7 @@ const uint8_t grid[4][7] = {
 };
 
 #define maxChars 16
-rainColumn allRainColumns[1]; // Array to hold all rainColumn structs.
+rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
 char inputString[maxChars];
@@ -60,9 +60,11 @@ void setup() {
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
 
-  Entropy.initialize();
+  //Entropy.initialize();
 
-  for( byte i=0; i<sizeof allRainColumns; i++) {
+  currentTime = millis();
+
+  for( byte i=0; i<maxWidth; i++) {
     allRainColumns[i].column = i;
     assignColumnProperties( allRainColumns[i] );
   }
@@ -74,57 +76,45 @@ void setup() {
 void loop() {
   //processUserInput();
   //displayUserSelectedMode();
+  randomSeed();
   makeItRain();
 }
 
 void makeItRain() {
-  for( byte i=0; i<sizeof allRainColumns; i++) {
+  for( byte i=0; i<maxWidth; i++) {
     rainOneColumn( allRainColumns[i] );
   }
+  // Render.
+  strip.show();
 }
 
 // Assign Column Properties. Mostly random, maintain column, lastUpdated, and lastCompleted.
 void assignColumnProperties( rainColumn &rainColumn ) {
-  currentTime = millis();
+  Serial.println((String) "Processing: " + rainColumn.column);
   rainColumn = {
     rainColumn.column, // column. maintained.
     0, // head
-    Entropy.random(6,32), // height
+    random(4,16), // height
     0, // isRunning
-    Entropy.random(5,64), // dimAmount
-    strip.Color(Entropy.random(0, 32), Entropy.random(175, 256), Entropy.random(0, 32), 0), // color
-    Entropy.random(15,850), // interval
-    Entropy.random(500,3000), // sleepTime
+    random(5,64), // dimAmount
+    strip.Color(random(0, 32), random(175, 256), random(0, 32), 0), // color
+    random(15,150), // interval
+    random(500,3000), // sleepTime
     rainColumn.lastUpdated, // lastUpdated. maintained.
     rainColumn.lastCompleted, // lastCompleted. maintained.
   };
-
-  // If this is the first iteration, assign sometime between now and near future for our initial state.
-  if( rainColumn.lastCompleted == 0 ) {
-    rainColumn.lastCompleted = Entropy.random(currentTime, currentTime+20000);
-  }
 }
 
 void rainOneColumn( rainColumn &rainColumn ) {
   currentTime = millis();
-  // Is it time to start a new sequence?
-  if( (currentTime - rainColumn.lastCompleted ) >= rainColumn.sleepTime ) {
-    rainColumn.isRunning = 1;
-  }
 
   if( rainColumn.isRunning == 1 ) {
-    // Begin animation at top (0).
-    rainColumn.head = 0;
 
     // Only animate if enough time has passed. This allows each column to have its own speed.
     if( (currentTime - rainColumn.lastUpdated ) >= rainColumn.interval ) {
 
       // Run the animation!
       updateRainColumnFrame( rainColumn );
-
-      // Increase head of the streamer, and set lastUpdated time.
-      rainColumn.head++;
-      rainColumn.lastUpdated = currentTime;
     }
 
     // Draw further down than our canvas so things don't end abruptly.
@@ -138,6 +128,11 @@ void rainOneColumn( rainColumn &rainColumn ) {
       assignColumnProperties( rainColumn );  
     }
   }
+
+    // Is it time to start a new sequence?
+  if( (currentTime - rainColumn.lastCompleted ) >= rainColumn.sleepTime ) {
+    rainColumn.isRunning = 1;
+  }
 }
 
 void updateRainColumnFrame(rainColumn &rainColumn) {
@@ -146,19 +141,24 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
 
     // Dim the tail.
     if ( rainColumn.head > rainColumn.height ) {
-      for(uint8_t tail=rainColumn.head-rainColumn.height; tail>=0; tail--) {
+      for(byte tail=rainColumn.head-rainColumn.height; tail>=0; tail--) {
         // Prevent wraparound.
         if ( tail == 255 ) {
           break;
         }
         uint16_t oldPixel = remapXY(rainColumn.column,tail);
         if ( -1 != oldPixel ) {
-          strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel), rainColumn.dimAmount));
+          uint32_t oldPixelColor = strip.getPixelColor(oldPixel);
+          if ( oldPixelColor != 0 ) {
+            strip.setPixelColor(oldPixel, dimColor(oldPixelColor, rainColumn.dimAmount));  
+          }
         }
       }
     }
-    
-    strip.show();
+
+    // Increase head of the streamer, and set lastUpdated time.
+    rainColumn.head++;
+    rainColumn.lastUpdated = currentTime;
 }
 
 // Listen for user input and process it, populating variables.
@@ -263,7 +263,7 @@ uint8_t blue(uint32_t c) {
 
 // Remap coordinates to an actual pixel number. Or a non-existent one.
 uint16_t remapXY(uint8_t x, uint8_t y) {
-  if ( x >= maxWidth || y >= maxHeight ) {
+  if ( x >= maxWidth || y >= maxHeight || x < 0 || y < 0 ) {
     return -1;
   }
   uint16_t pixelBlock = grid[y/8][x/8];

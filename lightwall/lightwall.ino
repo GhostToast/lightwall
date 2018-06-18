@@ -64,10 +64,7 @@ void setup() {
 
   currentTime = millis();
 
-  for( byte i=0; i<maxWidth; i++) {
-    allRainColumns[i].column = i;
-    assignColumnProperties( allRainColumns[i] );
-  }
+  
 
   //readEEPROM();
 }
@@ -80,46 +77,49 @@ void loop() {
 }
 
 void makeItRain() {
+  // Keep things randomized.
   reseedRandomness();
+  
+  // Initialize matrix if this is first run.
+  static boolean matrixInitialized = false;
+  if ( ! matrixInitialized ) {
+    for( byte i=0; i<maxWidth; i++) {
+      allRainColumns[i].column = i;
+      assignColumnProperties( allRainColumns[i] );
+    }
+    matrixInitialized = true;
+  }
+
+  // Loop through all rain columns.
   for( byte i=0; i<maxWidth; i++) {
     rainOneColumn( allRainColumns[i] );
   }
-  // Render.
+
+  // Render display.
   strip.show();
 }
 
+// Occasionally reseed our randomness. (30 seconds).
 void reseedRandomness() {
-  // Occasionally reseed our randomness.
   static long randomnessLastSeed = 0;
   currentTime = millis();
-  if ( currentTime - randomnessLastSeed >= 24000 ) {
+  if ( currentTime - randomnessLastSeed >= 30000 ) {
     randomSeed(analogRead(0));
     randomnessLastSeed = currentTime;
   }
 }
 
-// Assign Column Properties. Mostly random, maintain column, lastUpdated, and lastCompleted.
+// Assign rain Column Properties. Mostly random, maintain column, lastUpdated, and lastCompleted.
 void assignColumnProperties( rainColumn &rainColumn ) {
-//  rainColumn = {
-//    rainColumn.column, // column. maintained.
-//    0, // head
-//    random(4,16), // height
-//    0, // isRunning
-//    random(5,64), // dimAmount
-//    strip.Color(random(0, 32), random(175, 256), random(0, 32), 0), // color
-//    random(15,150), // interval
-//    random(500,3000), // sleepTime
-//    rainColumn.lastUpdated, // lastUpdated. maintained.
-//    rainColumn.lastCompleted, // lastCompleted. maintained.
-//  };
   rainColumn.head = 0;
   rainColumn.headBrightness = random(16, 64);
   rainColumn.height = random(8,24);
   rainColumn.isRunning = 0;
-  rainColumn.dimAmount = random(4,16);
-  rainColumn.color = strip.Color(random(0, 24), random(96, 256), random(0, 20), 0);
-  rainColumn.interval = random(15,150);
-  rainColumn.sleepTime = random(150, 300);
+  rainColumn.dimAmount = random(8,32);
+  rainColumn.color = strip.Color(random(0, 24), random(192, 256), random(0, 32), 0);
+  // rainColumn.color = strip.Color(random(0, 24), random(0, 32), random(192, 256), 0); // blue -- too purple?
+  rainColumn.interval = random(15,115);
+  rainColumn.sleepTime = random(300, 3000);
 }
 
 void rainOneColumn( rainColumn &rainColumn ) {
@@ -171,12 +171,13 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
         }
         uint16_t oldPixel = remapXY(rainColumn.column,tail);
         if ( -1 != oldPixel ) {
-          uint32_t oldPixelColor = strip.getPixelColor(oldPixel);
-          if ( oldPixelColor != 0 ) {
-            strip.setPixelColor(oldPixel, dimColor(oldPixelColor, rainColumn.dimAmount));  
-          }
+          strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel), rainColumn.dimAmount));  
         }
       }
+//      strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-rainColumn.height), dimColor(rainColumn.color, round(rainColumn.dimAmount)));
+//      strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-rainColumn.height-1), dimColor(rainColumn.color, round(rainColumn.dimAmount*1.5)));
+//      strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-rainColumn.height-2), dimColor(rainColumn.color, round(rainColumn.dimAmount*2)));
+//      strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-rainColumn.height-3), dimColor(rainColumn.color, round(rainColumn.dimAmount*4)));
     }
 
     // Increase head of the streamer, and set lastUpdated time.
@@ -266,6 +267,11 @@ void oneColor(uint32_t color) {
 uint32_t dimColor(uint32_t color, byte dimAmount) {
     // Subtract R, G and B components until zero.
     uint32_t dimColor = strip.Color( max(0,red(color)-dimAmount), max(0,green(color)-dimAmount), max(0,blue(color)-dimAmount), 0);
+
+    // Ensure we don't return black.
+//    if ( 0 == dimColor ) {
+//      return strip.Color(0,16,0);
+//    }
     return dimColor;
 }
 

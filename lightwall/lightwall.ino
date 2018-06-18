@@ -76,11 +76,11 @@ void setup() {
 void loop() {
   //processUserInput();
   //displayUserSelectedMode();
-  randomSeed();
   makeItRain();
 }
 
 void makeItRain() {
+  reseedRandomness();
   for( byte i=0; i<maxWidth; i++) {
     rainOneColumn( allRainColumns[i] );
   }
@@ -88,21 +88,38 @@ void makeItRain() {
   strip.show();
 }
 
+void reseedRandomness() {
+  // Occasionally reseed our randomness.
+  static long randomnessLastSeed = 0;
+  currentTime = millis();
+  if ( currentTime - randomnessLastSeed >= 24000 ) {
+    randomSeed(analogRead(0));
+    randomnessLastSeed = currentTime;
+  }
+}
+
 // Assign Column Properties. Mostly random, maintain column, lastUpdated, and lastCompleted.
 void assignColumnProperties( rainColumn &rainColumn ) {
-  Serial.println((String) "Processing: " + rainColumn.column);
-  rainColumn = {
-    rainColumn.column, // column. maintained.
-    0, // head
-    random(4,16), // height
-    0, // isRunning
-    random(5,64), // dimAmount
-    strip.Color(random(0, 32), random(175, 256), random(0, 32), 0), // color
-    random(15,150), // interval
-    random(500,3000), // sleepTime
-    rainColumn.lastUpdated, // lastUpdated. maintained.
-    rainColumn.lastCompleted, // lastCompleted. maintained.
-  };
+//  rainColumn = {
+//    rainColumn.column, // column. maintained.
+//    0, // head
+//    random(4,16), // height
+//    0, // isRunning
+//    random(5,64), // dimAmount
+//    strip.Color(random(0, 32), random(175, 256), random(0, 32), 0), // color
+//    random(15,150), // interval
+//    random(500,3000), // sleepTime
+//    rainColumn.lastUpdated, // lastUpdated. maintained.
+//    rainColumn.lastCompleted, // lastCompleted. maintained.
+//  };
+  rainColumn.head = 0;
+  rainColumn.headBrightness = random(16, 64);
+  rainColumn.height = random(8,24);
+  rainColumn.isRunning = 0;
+  rainColumn.dimAmount = random(4,16);
+  rainColumn.color = strip.Color(random(0, 24), random(96, 256), random(0, 20), 0);
+  rainColumn.interval = random(15,150);
+  rainColumn.sleepTime = random(150, 300);
 }
 
 void rainOneColumn( rainColumn &rainColumn ) {
@@ -118,7 +135,7 @@ void rainOneColumn( rainColumn &rainColumn ) {
     }
 
     // Draw further down than our canvas so things don't end abruptly.
-    if( rainColumn.head >= maxHeight*2 ) {
+    if( rainColumn.head > maxHeight+(rainColumn.height*2) ) {
 
       // Inform that the animation has terminated, and set lastCompleted time.
       rainColumn.isRunning = 0;
@@ -136,8 +153,14 @@ void rainOneColumn( rainColumn &rainColumn ) {
 }
 
 void updateRainColumnFrame(rainColumn &rainColumn) {
-  
-    strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head), rainColumn.color);
+
+    // Brighten the front.
+    strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head), brightenColor(rainColumn.color, rainColumn.headBrightness));
+    strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-1), brightenColor(rainColumn.color, round(rainColumn.headBrightness*.66)));
+    strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-2), brightenColor(rainColumn.color, round(rainColumn.headBrightness*.33)));
+
+    // Standard color for behind the head.
+    strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-3), rainColumn.color);
 
     // Dim the tail.
     if ( rainColumn.head > rainColumn.height ) {
@@ -244,6 +267,12 @@ uint32_t dimColor(uint32_t color, byte dimAmount) {
     // Subtract R, G and B components until zero.
     uint32_t dimColor = strip.Color( max(0,red(color)-dimAmount), max(0,green(color)-dimAmount), max(0,blue(color)-dimAmount), 0);
     return dimColor;
+}
+
+// Brighten a color by adding white.
+uint32_t brightenColor(uint32_t color, byte whiteAmount) {
+    uint32_t brightenColor = strip.Color( red(color), green(color), blue(color), whiteAmount);
+    return brightenColor;
 }
 
 // Returns red component or RGB color.

@@ -2,6 +2,7 @@
 struct rainColumn {
   byte column;                 // which column this represents on the X axis.
   byte head;                   // which pixel is being processed as the head.
+  byte headBrightness;         // how bright to make the head (white amount).
   byte height;                 // how many pixels tall this streamer should be.
   byte isRunning;              // whether this animation is currently playing.
   byte dimAmount;              // amount to diminish tail each tick.

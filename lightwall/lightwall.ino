@@ -112,13 +112,14 @@ void reseedRandomness() {
 // Assign rain Column Properties. Mostly random, maintain column, lastUpdated, and lastCompleted.
 void assignColumnProperties( rainColumn &rainColumn ) {
   rainColumn.head = 0;
-  rainColumn.headBrightness = random(16, 64);
+  rainColumn.headBrightness = random(32, 96);
   rainColumn.height = random(8,24);
   rainColumn.isRunning = 0;
+  rainColumn.canGoBlack = random(0,2);
   rainColumn.dimAmount = random(8,32);
   rainColumn.color = strip.Color(random(0, 24), random(192, 256), random(0, 32), 0);
-  // rainColumn.color = strip.Color(random(0, 24), random(0, 32), random(192, 256), 0); // blue -- too purple?
-  rainColumn.interval = random(15,115);
+  rainColumn.dominantColor = 'g';
+  rainColumn.interval = random(25,115);
   rainColumn.sleepTime = random(300, 3000);
 }
 
@@ -171,13 +172,9 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
         }
         uint16_t oldPixel = remapXY(rainColumn.column,tail);
         if ( -1 != oldPixel ) {
-          strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel), rainColumn.dimAmount));  
+          strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel), rainColumn.dimAmount, rainColumn.canGoBlack, rainColumn.dominantColor));  
         }
       }
-//      strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-rainColumn.height), dimColor(rainColumn.color, round(rainColumn.dimAmount)));
-//      strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-rainColumn.height-1), dimColor(rainColumn.color, round(rainColumn.dimAmount*1.5)));
-//      strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-rainColumn.height-2), dimColor(rainColumn.color, round(rainColumn.dimAmount*2)));
-//      strip.setPixelColor(remapXY(rainColumn.column,rainColumn.head-rainColumn.height-3), dimColor(rainColumn.color, round(rainColumn.dimAmount*4)));
     }
 
     // Increase head of the streamer, and set lastUpdated time.
@@ -264,14 +261,25 @@ void oneColor(uint32_t color) {
 }
 
 // Calculate diminishing version of a color.
-uint32_t dimColor(uint32_t color, byte dimAmount) {
-    // Subtract R, G and B components until zero.
-    uint32_t dimColor = strip.Color( max(0,red(color)-dimAmount), max(0,green(color)-dimAmount), max(0,blue(color)-dimAmount), 0);
+uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack, char dominantColor) {
+    // Subtract R, G and B components until zero, except dominant color.
+    uint8_t r = max( 0, red(color) - dimAmount );
+    uint8_t g = max( 0, green(color) - dimAmount );
+    uint8_t b = max( 0, blue(color) - dimAmount );
 
-    // Ensure we don't return black.
-//    if ( 0 == dimColor ) {
-//      return strip.Color(0,16,0);
-//    }
+    if ( canGoBlack && dominantColor == 'r' && r <= dimAmount ) {
+      r = r + dimAmount;
+    }
+    
+    if ( canGoBlack && dominantColor == 'g' && g <= dimAmount ) {
+      g = g + dimAmount;
+    }
+    
+    if ( canGoBlack && dominantColor == 'b' && b <= dimAmount ) {
+      b = b + dimAmount;
+    }
+    uint32_t dimColor = strip.Color( r, g, b, 0);
+
     return dimColor;
 }
 

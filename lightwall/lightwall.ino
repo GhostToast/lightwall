@@ -112,13 +112,21 @@ void reseedRandomness() {
 // Assign rain Column Properties. Mostly random, maintain column, lastUpdated, and lastCompleted.
 void assignColumnProperties( rainColumn &rainColumn ) {
   rainColumn.head = 0;
-  rainColumn.headBrightness = random(32, 96);
+  rainColumn.headBrightness = random(24, 96);
   rainColumn.height = random(8,24);
   rainColumn.isRunning = 0;
   rainColumn.canGoBlack = random(0,2);
   rainColumn.dimAmount = random(8,32);
-  rainColumn.color = strip.Color(random(0, 24), random(192, 256), random(0, 32), 0);
-  rainColumn.dominantColor = 'g';
+
+  uint32_t color = strip.Color(random(0, 24), random(192, 256), random(0, 32), 0); // green.
+//  uint32_t color = strip.Color(random(0, 16), random(0, 64), random(192, 256), 0); // blue.
+  rainColumn.color = color;
+  rainColumn.dominantColor = getDominantColor( color );
+
+//  uint32_t color = Wheel(random(0,256));
+//  rainColumn.color = color;
+//  rainColumn.dominantColor = getDominantColor( color );
+  
   rainColumn.interval = random(25,115);
   rainColumn.sleepTime = random(300, 3000);
 }
@@ -172,7 +180,10 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
         }
         uint16_t oldPixel = remapXY(rainColumn.column,tail);
         if ( -1 != oldPixel ) {
-          strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel), rainColumn.dimAmount, rainColumn.canGoBlack, rainColumn.dominantColor));  
+          uint32_t oldPixelColor = strip.getPixelColor(oldPixel);
+          if ( 0 != oldPixelColor ) {
+            strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel), rainColumn.dimAmount, rainColumn.canGoBlack, rainColumn.dominantColor));              
+          }
         }
       }
     }
@@ -262,25 +273,56 @@ void oneColor(uint32_t color) {
 
 // Calculate diminishing version of a color.
 uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack, char dominantColor) {
-    // Subtract R, G and B components until zero, except dominant color.
-    uint8_t r = max( 0, red(color) - dimAmount );
-    uint8_t g = max( 0, green(color) - dimAmount );
-    uint8_t b = max( 0, blue(color) - dimAmount );
+  // Subtract R, G and B components until zero, except dominant color.
+  uint8_t r = max( 0, red(color) - dimAmount );
+  uint8_t g = max( 0, green(color) - dimAmount );
+  uint8_t b = max( 0, blue(color) - dimAmount );
+  uint8_t w = 0;
 
-    if ( canGoBlack && dominantColor == 'r' && r <= dimAmount ) {
+  if ( ! canGoBlack ) {
+    // Red.
+    if (dominantColor == 'r' && r <= dimAmount ) {
       r = r + dimAmount;
     }
-    
-    if ( canGoBlack && dominantColor == 'g' && g <= dimAmount ) {
+  
+    // Green.
+    if (dominantColor == 'g' && g <= dimAmount ) {
       g = g + dimAmount;
     }
-    
-    if ( canGoBlack && dominantColor == 'b' && b <= dimAmount ) {
+  
+    // Blue.
+    if (dominantColor == 'b' && b <= dimAmount ) {
       b = b + dimAmount;
     }
-    uint32_t dimColor = strip.Color( r, g, b, 0);
+ 
+    // White.
+    if (dominantColor == 'w' && r <= dimAmount && g <= dimAmount && b <= dimAmount) {
+      w = dimAmount;
+    }
+  }
+  
+  uint32_t dimColor = strip.Color( r, g, b, w);
+  
+  return dimColor;
+}
 
-    return dimColor;
+// Attempt to discover dominant image of provided color.
+char getDominantColor(uint32_t color) {
+  uint8_t r = red(color);
+  uint8_t g = green(color);
+  uint8_t b = blue(color);
+
+  // Default.
+  char dominantColor = 'w';
+
+  if ( g > r && g > b ) {
+    dominantColor = 'g';
+  } else if ( b > g && b > r ) {
+    dominantColor = 'b';
+  } else if ( r > g && r > b ) {
+    dominantColor = 'r';
+  }
+  return dominantColor;
 }
 
 // Brighten a color by adding white.

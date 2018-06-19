@@ -7,7 +7,7 @@ struct rainColumn {
   byte isRunning;              // whether this animation is currently playing.
   byte canGoBlack;             // whether this column will fade to black or stay faintly the dominant color.
   byte dimAmount;              // amount to diminish tail each tick.
-  char dominantColor;          // the primary color of this construct.
+  char dominantColor;          // the dominant color.
   uint32_t color;              // the color to initialize at.
   uint16_t interval;           // how long to wait between animation frames.
   uint16_t sleepTime;          // how long to wait before re-animating.

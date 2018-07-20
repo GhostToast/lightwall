@@ -123,6 +123,8 @@ void assignColumnProperties( rainColumn &rainColumn ) {
       break;
     case 'b':
       rainColumn.color = strip.Color(random(0, 8), random(24, 96), random(192, 256), 0);
+    default:
+      rainColumn.color = strip.Color(random(192, 256), random(0, 8), random(0, 8), 0);
   }
   
   rainColumn.interval = random(25,115);
@@ -208,13 +210,13 @@ void displayUserSelectedMode() {
   if(displayFlag == 0) {
     displayFlag = 1;
     index = 0;
-    if(displayPattern == 's') {
-      oneColor(strip.Color(rVal.toInt(), gVal.toInt(), bVal.toInt(), wVal.toInt()));
-    } else if(displayPattern == 'm') {
-      makeItRain();
-    }
-    writeEEPROM();
   }
+  if(displayPattern == 's') {
+    oneColor(strip.Color(rVal.toInt(), gVal.toInt(), bVal.toInt(), wVal.toInt()));
+  } else if(displayPattern == 'm') {
+    makeItRain();
+  }
+  writeEEPROM();
 }
 
 // Processes current character, setting mode and colors accordingly.

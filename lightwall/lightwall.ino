@@ -1,7 +1,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <EEPROM.h>
-#include <Entropy.h>
 #include "rainColumn.h"
+#include "utilities.h"
 
 #ifdef __AVR__
   #include <avr/power.h>
@@ -36,7 +36,7 @@ const uint8_t grid[4][7] = {
   {-1,   3,  -1,   7,  -1,  11,  -1}
 };
 
-#define maxChars 16
+#define maxChars 17
 rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
@@ -45,6 +45,8 @@ char currentCharacter;
 int index = 0;
 int displayFlag = 0;
 char currentColorChannel;
+char displayPattern;
+char matrixColorMode;
 String rVal;
 String bVal;
 String gVal;
@@ -60,20 +62,14 @@ void setup() {
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
 
-  //Entropy.initialize();
-
   currentTime = millis();
-
-  
-
-  //readEEPROM();
+  readEEPROM();
 }
 
 // The main loop.
 void loop() {
-  //processUserInput();
-  //displayUserSelectedMode();
-  makeItRain();
+  processUserInput();
+  displayUserSelectedMode();
 }
 
 void makeItRain() {
@@ -118,17 +114,19 @@ void assignColumnProperties( rainColumn &rainColumn ) {
   rainColumn.canGoBlack = random(0,2);
   rainColumn.dimAmount = random(8,32);
 
-  uint32_t color = strip.Color(random(0, 24), random(192, 256), random(0, 32), 0); // green.
-//  uint32_t color = strip.Color(random(0, 16), random(0, 64), random(192, 256), 0); // blue.
-  rainColumn.color = color;
-  rainColumn.dominantColor = getDominantColor( color );
-
-//  uint32_t color = Wheel(random(0,256));
-//  rainColumn.color = color;
-//  rainColumn.dominantColor = getDominantColor( color );
+  switch (matrixColorMode) {
+    case 'r':
+      rainColumn.color = strip.Color(random(192, 256), random(0, 8), random(0, 8), 0);
+      break;
+    case 'g':
+      rainColumn.color = strip.Color(random(0, 24), random(192, 256), random(0, 32), 0);
+      break;
+    case 'b':
+      rainColumn.color = strip.Color(random(0, 8), random(24, 96), random(192, 256), 0);
+  }
   
   rainColumn.interval = random(25,115);
-  rainColumn.sleepTime = random(300, 3000);
+  rainColumn.sleepTime = random(1000, 3000);
 }
 
 void rainOneColumn( rainColumn &rainColumn ) {
@@ -182,7 +180,7 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
         if ( -1 != oldPixel ) {
           uint32_t oldPixelColor = strip.getPixelColor(oldPixel);
           if ( 0 != oldPixelColor ) {
-            strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel), rainColumn.dimAmount, rainColumn.canGoBlack, rainColumn.dominantColor));              
+            strip.setPixelColor(oldPixel, dimColor(strip.getPixelColor(oldPixel), rainColumn.dimAmount, rainColumn.canGoBlack));              
           }
         }
       }
@@ -208,15 +206,32 @@ void processUserInput() {
 // Render user's choice.
 void displayUserSelectedMode() {
   if(displayFlag == 0) {
-    oneColor(strip.Color(rVal.toInt(), gVal.toInt(), bVal.toInt(), wVal.toInt()));
     displayFlag = 1;
     index = 0;
+    if(displayPattern == 's') {
+      oneColor(strip.Color(rVal.toInt(), gVal.toInt(), bVal.toInt(), wVal.toInt()));
+    } else if(displayPattern == 'm') {
+      makeItRain();
+    }
     writeEEPROM();
   }
 }
 
-// Processes current character, setting color variables accordingly.
+// Processes current character, setting mode and colors accordingly.
 void processCharacter() {
+  if(currentCharacter == 's') {
+    displayPattern = currentCharacter;
+  } else if(currentCharacter == 'm') {
+    displayPattern = currentCharacter;
+  } else if(displayPattern == 's') {
+    processSingleColorCharacter();
+  } else if(displayPattern == 'm') {
+    matrixColorMode = currentCharacter;
+  }
+}
+
+// Processes current character, setting up color for single color display.
+void processSingleColorCharacter() {
   if(currentCharacter == 'r') {
     currentColorChannel = currentCharacter;
     rVal = "";
@@ -244,20 +259,32 @@ void processCharacter() {
 void writeEEPROM() {
   currentTime = millis();
   if( (currentTime - eepromLastUpdate ) >= eepromThrottleInterval ) {
-    EEPROM.update(0, byte( rVal.toInt() ));
-    EEPROM.update(1, byte( gVal.toInt() ));
-    EEPROM.update(2, byte( bVal.toInt() ));
-    EEPROM.update(3, byte( wVal.toInt() ));
+      EEPROM.update(0, displayPattern);
+    if(displayPattern == 's') {
+      EEPROM.update(1, byte( rVal.toInt() ));
+      EEPROM.update(2, byte( gVal.toInt() ));
+      EEPROM.update(3, byte( bVal.toInt() ));
+      EEPROM.update(4, byte( wVal.toInt() ));
+    } else if(displayPattern == 'm') {
+      EEPROM.update(1, matrixColorMode);
+    }
+    
     eepromLastUpdate = currentTime;
   }
 }
 
-// Attempt to read EEPOM state when booting up, to use last known color.
+// Attempt to read EEPOM state when booting up, to use last known pattern and color.
 void readEEPROM() {
-  rVal = EEPROM.read(0);
-  gVal = EEPROM.read(1);
-  bVal = EEPROM.read(2);
-  wVal = EEPROM.read(3);
+  displayPattern = EEPROM.read(0);
+
+  if(displayPattern == 's') {
+    rVal = EEPROM.read(1);
+    gVal = EEPROM.read(2);
+    bVal = EEPROM.read(3);
+    wVal = EEPROM.read(4);
+  } else if(displayPattern == 'm') {
+    matrixColorMode = EEPROM.read(1);
+  }
 }
 
 /**
@@ -272,7 +299,7 @@ void oneColor(uint32_t color) {
 }
 
 // Calculate diminishing version of a color.
-uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack, char dominantColor) {
+uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack) {
   // Subtract R, G and B components until zero, except dominant color.
   uint8_t r = max( 0, red(color) - dimAmount );
   uint8_t g = max( 0, green(color) - dimAmount );
@@ -281,22 +308,22 @@ uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack, char dominant
 
   if ( ! canGoBlack ) {
     // Red.
-    if (dominantColor == 'r' && r <= dimAmount ) {
+    if (matrixColorMode == 'r' && r <= dimAmount ) {
       r = r + dimAmount;
     }
   
     // Green.
-    if (dominantColor == 'g' && g <= dimAmount ) {
+    if (matrixColorMode == 'g' && g <= dimAmount ) {
       g = g + dimAmount;
     }
   
     // Blue.
-    if (dominantColor == 'b' && b <= dimAmount ) {
+    if (matrixColorMode == 'b' && b <= dimAmount ) {
       b = b + dimAmount;
     }
  
     // White.
-    if (dominantColor == 'w' && r <= dimAmount && g <= dimAmount && b <= dimAmount) {
+    if (matrixColorMode == 'w' && r <= dimAmount && g <= dimAmount && b <= dimAmount) {
       w = dimAmount;
     }
   }
@@ -306,44 +333,10 @@ uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack, char dominant
   return dimColor;
 }
 
-// Attempt to discover dominant image of provided color.
-char getDominantColor(uint32_t color) {
-  uint8_t r = red(color);
-  uint8_t g = green(color);
-  uint8_t b = blue(color);
-
-  // Default.
-  char dominantColor = 'w';
-
-  if ( g > r && g > b ) {
-    dominantColor = 'g';
-  } else if ( b > g && b > r ) {
-    dominantColor = 'b';
-  } else if ( r > g && r > b ) {
-    dominantColor = 'r';
-  }
-  return dominantColor;
-}
-
 // Brighten a color by adding white.
 uint32_t brightenColor(uint32_t color, byte whiteAmount) {
     uint32_t brightenColor = strip.Color( red(color), green(color), blue(color), whiteAmount);
     return brightenColor;
-}
-
-// Returns red component or RGB color.
-uint8_t red(uint32_t c) {
-  return (c >> 16);
-}
-
-// Returns green component or RGB color.
-uint8_t green(uint32_t c) {
-  return (c >> 8);
-}
-
-// Returns blue component or RGB color.
-uint8_t blue(uint32_t c) {
-  return (c);
 }
 
 // Remap coordinates to an actual pixel number. Or a non-existent one.

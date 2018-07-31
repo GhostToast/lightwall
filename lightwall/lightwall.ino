@@ -81,7 +81,6 @@ void makeItRain() {
   if ( ! matrixInitialized ) {
     for( byte i=0; i<maxWidth; i++) {
       allRainColumns[i].column = i;
-//      assignColumnProperties( allRainColumns[i] );
     }
     matrixInitialized = true;
   }
@@ -200,8 +199,10 @@ void processUserInput() {
     displayFlag = 0;
     if(index < maxChars-1){
       currentCharacter = Serial.read();
+      inputString[index] = currentCharacter;
       processCharacter();
       index++;
+      inputString[index] = '\0'; // Always null terminate.
     }
   }
 }
@@ -211,6 +212,7 @@ void displayUserSelectedMode() {
   if(displayFlag == 0) {
     displayFlag = 1;
     index = 0;
+    Serial.print(inputString); // Send debug back to phone.
   }
   if(displayPattern == 's') {
     oneColor(strip.Color(rVal.toInt(), gVal.toInt(), bVal.toInt(), wVal.toInt()));

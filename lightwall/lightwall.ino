@@ -326,8 +326,8 @@ uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack) {
     }
  
     // White.
-    if (matrixColorMode == 'w' && r <= dimAmount && g <= dimAmount && b <= dimAmount) {
-      w = dimAmount;
+    if (matrixColorMode == 'w' && b <= dimAmount ) {
+      w = w + dimAmount;
     }
   }
   

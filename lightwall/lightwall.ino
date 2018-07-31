@@ -51,7 +51,7 @@ String rVal;
 String bVal;
 String gVal;
 String wVal;
-unsigned long eepromThrottleInterval = 500;
+unsigned long eepromThrottleInterval = 5000;
 unsigned long eepromLastUpdate = 0;
 unsigned long currentTime = 0;
 

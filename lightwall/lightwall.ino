@@ -36,7 +36,7 @@ const uint8_t grid[4][7] = {
   {-1,   3,  -1,   7,  -1,  11,  -1}
 };
 
-#define maxChars 17
+#define maxChars 32
 rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
@@ -47,10 +47,10 @@ int displayFlag = 0;
 char currentColorChannel;
 char displayPattern;
 char matrixColorMode;
-String rVal;
-String bVal;
-String gVal;
-String wVal;
+byte rVal;
+byte bVal;
+byte gVal;
+byte wVal;
 unsigned long eepromThrottleInterval = 5000;
 unsigned long eepromLastUpdate = 0;
 unsigned long currentTime = 0;
@@ -195,7 +195,7 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
 
 // Listen for user input and process it, populating variables.
 void processUserInput() {
-  while(Serial.available() > 0 ) {
+  while(Serial.available()) {
     displayFlag = 0;
     if(index < maxChars-1){
       currentCharacter = Serial.read();
@@ -213,10 +213,13 @@ void displayUserSelectedMode() {
     displayFlag = 1;
     index = 0;
     Serial.print(inputString); // Send debug back to phone.
+
+    // We only need to fire the "oneColor" once per instruction set, not continuously.
+    if(displayPattern == 's') {
+      oneColor(strip.Color(rVal, gVal, bVal, wVal));
+    }
   }
-  if(displayPattern == 's') {
-    oneColor(strip.Color(rVal.toInt(), gVal.toInt(), bVal.toInt(), wVal.toInt()));
-  } else if(displayPattern == 'm') {
+  if(displayFlag == 1 && displayPattern == 'm') {
     makeItRain();
   }
   writeEEPROM();
@@ -224,9 +227,7 @@ void displayUserSelectedMode() {
 
 // Processes current character, setting mode and colors accordingly.
 void processCharacter() {
-  if(currentCharacter == 's') {
-    displayPattern = currentCharacter;
-  } else if(currentCharacter == 'm') {
+  if(currentCharacter == 's' || currentCharacter == 'm') {
     displayPattern = currentCharacter;
   } else if(displayPattern == 's') {
     processSingleColorCharacter();
@@ -239,24 +240,28 @@ void processCharacter() {
 void processSingleColorCharacter() {
   if(currentCharacter == 'r') {
     currentColorChannel = currentCharacter;
-    rVal = "";
+    rVal = 0;
   } else if(currentCharacter == 'g') {
     currentColorChannel = currentCharacter;
-    gVal = "";
+    gVal = 0;
   } else if(currentCharacter == 'b') {
     currentColorChannel = currentCharacter;
-    bVal = "";
+    bVal = 0;
   } else if(currentCharacter == 'w') {
     currentColorChannel = currentCharacter;
-    wVal = "";
-  } else if(currentColorChannel == 'r' && isDigit(currentCharacter)){
-    rVal += currentCharacter;
-  } else if(currentColorChannel == 'g' && isDigit(currentCharacter)){
-    gVal += currentCharacter;
-  } else if(currentColorChannel == 'b' && isDigit(currentCharacter)){
-    bVal += currentCharacter;
-  } else if(currentColorChannel == 'w' && isDigit(currentCharacter)){
-    wVal += currentCharacter;
+    wVal = 0;
+  } else if(currentColorChannel == 'r'){
+    rVal *= 10;
+    rVal += currentCharacter - '0';
+  } else if(currentColorChannel == 'g'){
+    gVal *= 10;
+    gVal += currentCharacter - '0';
+  } else if(currentColorChannel == 'b'){
+    bVal *= 10;
+    bVal += currentCharacter - '0';
+  } else if(currentColorChannel == 'w'){
+    wVal *= 10;
+    wVal += currentCharacter - '0';
   }
 }
 
@@ -266,10 +271,10 @@ void writeEEPROM() {
   if( (currentTime - eepromLastUpdate ) >= eepromThrottleInterval ) {
       EEPROM.update(0, displayPattern);
     if(displayPattern == 's') {
-      EEPROM.update(1, byte( rVal.toInt() ));
-      EEPROM.update(2, byte( gVal.toInt() ));
-      EEPROM.update(3, byte( bVal.toInt() ));
-      EEPROM.update(4, byte( wVal.toInt() ));
+      EEPROM.update(1, rVal);
+      EEPROM.update(2, gVal);
+      EEPROM.update(3, bVal);
+      EEPROM.update(4, wVal);
     } else if(displayPattern == 'm') {
       EEPROM.update(1, matrixColorMode);
     }

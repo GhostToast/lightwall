@@ -123,6 +123,7 @@ void assignColumnProperties( rainColumn &rainColumn ) {
       break;
     case 'b':
       rainColumn.color = strip.Color(random(0, 8), random(24, 96), random(192, 256), 0);
+      break;
     default:
       rainColumn.color = strip.Color(random(192, 256), random(0, 8), random(0, 8), 0);
   }
@@ -246,13 +247,13 @@ void processSingleColorCharacter() {
   } else if(currentCharacter == 'w') {
     currentColorChannel = currentCharacter;
     wVal = "";
-  } else if(currentColorChannel == 'r' && currentCharacter != 'r'){
+  } else if(currentColorChannel == 'r' && isDigit(currentCharacter)){
     rVal += currentCharacter;
-  } else if(currentColorChannel == 'g' && currentCharacter != 'g'){
+  } else if(currentColorChannel == 'g' && isDigit(currentCharacter)){
     gVal += currentCharacter;
-  } else if(currentColorChannel == 'b' && currentCharacter != 'b'){
+  } else if(currentColorChannel == 'b' && isDigit(currentCharacter)){
     bVal += currentCharacter;
-  } else if(currentColorChannel == 'w' && currentCharacter != 'w'){
+  } else if(currentColorChannel == 'w' && isDigit(currentCharacter)){
     wVal += currentCharacter;
   }
 }

@@ -81,7 +81,7 @@ void makeItRain() {
   if ( ! matrixInitialized ) {
     for( byte i=0; i<maxWidth; i++) {
       allRainColumns[i].column = i;
-      assignColumnProperties( allRainColumns[i] );
+//      assignColumnProperties( allRainColumns[i] );
     }
     matrixInitialized = true;
   }

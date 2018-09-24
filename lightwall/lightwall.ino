@@ -123,6 +123,15 @@ void assignColumnProperties( rainColumn &rainColumn ) {
     case 'b':
       rainColumn.color = strip.Color(random(0, 8), random(24, 96), random(192, 256), 0);
       break;
+    case 'w':
+      rainColumn.color = strip.Color(0, 0, 0, random(96, 256));
+      break;
+    case 'o': // orange.
+      rainColumn.color = strip.Color(random(96, 128), random(96, 128), random(0, 32), 0);
+      break;
+    case 'p': // purple.
+      rainColumn.color = strip.Color(random(192, 256), random(0, 24), random(192, 256), 0);
+      break;
     default:
       rainColumn.color = strip.Color(random(192, 256), random(0, 8), random(0, 8), 0);
   }
@@ -335,6 +344,26 @@ uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack) {
     // White.
     if (matrixColorMode == 'w' && b <= dimAmount ) {
       w = w + dimAmount;
+    }
+
+    // Orange.
+    if (matrixColorMode == 'o') {
+      if (r <= dimAmount) {
+        r = r + dimAmount;
+      }
+      if (g <= dimAmount) {
+        g = g + dimAmount;
+      }
+    }
+
+    // Purple.
+    if (matrixColorMode == 'p') {
+      if (r <= dimAmount) {
+        r = r + dimAmount;
+      }
+      if (b <= dimAmount) {
+        b = b + dimAmount;
+      }
     }
   }
   

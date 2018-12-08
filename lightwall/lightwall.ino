@@ -1,6 +1,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <EEPROM.h>
 #include "rainColumn.h"
+#include "ornament.h"
 #include "utilities.h"
 
 #ifdef __AVR__
@@ -9,7 +10,7 @@
 
 #define PIN 6
 #define NUM_LEDS 896
-#define BRIGHTNESS 50
+#define BRIGHTNESS 64
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRBW + NEO_KHZ800);
 
 /**
@@ -38,6 +39,7 @@ const uint8_t grid[4][7] = {
 
 #define maxChars 32
 rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
+ornament allOrnaments[14]; // Array to hold all ornament structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
 char inputString[maxChars];
@@ -68,8 +70,135 @@ void setup() {
 
 // The main loop.
 void loop() {
-  processUserInput();
-  displayUserSelectedMode();
+  //processUserInput();
+  //displayUserSelectedMode();
+  holidayLights();
+}
+
+void holidayLights() {
+  const uint32_t arrayColors[4] = {
+    strip.Color(255, 0, 0, 0),
+    strip.Color(0, 255, 0, 0),
+    strip.Color(0, 0, 255, 0),
+    strip.Color(255, 128, 0, 0)
+  };
+
+  // Keep things randomized.
+  reseedRandomness();
+  
+  // Initialize ornaments if this is first run.
+  static boolean ornamentsInitialized = false;
+  if ( ! ornamentsInitialized ) {
+    for( byte i=0; i<14; i++) {
+      allOrnaments[i].panel = i;
+    }
+    ornamentsInitialized = true;
+  }
+
+  // Loop through all rain columns.
+  for( byte i=0; i<14; i++) {
+    renderOneOrnament( allOrnaments[i] );
+  }
+
+  // Render display.
+  strip.show();
+
+//  if(displayFlag == 0) {
+//    displayFlag = 1;
+//    index = 0;
+
+//    for(uint16_t i=0; i<NUM_LEDS; i++) {
+//      if ( i % 7 ) {
+//        strip.setPixelColor(i, 0);
+//      } else {
+//        strip.setPixelColor(i, arrayColors[random(0, 3)]);
+//      }
+//    }
+//
+//    for( byte a = 0; a<8; a++ ) {
+//      for( byte b = 0; b<8; b++ ) {
+//
+//        uint16_t pixelBlock = grid[a][b];
+//        byte color = random(0,4);
+//
+//        for( byte z = 0; z<64; z++ ) {
+//          strip.setPixelColor( pixelBlock * 64 + z, arrayColors[color]);
+//        }
+//      }
+//    }
+
+//      if ( x >= maxWidth || y >= maxHeight || x < 0 || y < 0 ) {
+//        return -1;
+//      }
+//      uint16_t pixelBlock = grid[y/8][x/8];
+//      if (-1 == pixelBlock) {
+//        return -1;
+//      }
+//      pixelBlock = pixelBlock * 64 + block[y%8][x%8];
+//      return pixelBlock;
+
+//    strip.show();
+//  }
+}
+
+void renderOneOrnament( ornament &ornament ) {
+  currentTime = millis();
+
+  // Only animate if enough time has passed. This allows each column to have its own speed.
+  if( (currentTime - ornament.lastUpdated ) >= ornament.interval ) {
+
+    // Run the animation!
+    updateOrnamentFrame( ornament );
+  }
+}
+
+void updateOrnamentFrame(ornament &ornament) {
+  uint32_t core = strip.Color(255, 10, 0, 0);
+  uint32_t dim1 = strip.Color(64, 6, 0, 0);
+  uint32_t dim2 = strip.Color(32, 0, 0, 0);
+  uint32_t fade = strip.Color(16, 0, 0, 0);
+
+  // core.
+  strip.setPixelColor( innerRemapXY(3, 3, ornament.panel), core );
+  strip.setPixelColor( innerRemapXY(4, 3, ornament.panel), core );
+  strip.setPixelColor( innerRemapXY(3, 4, ornament.panel), core );
+  strip.setPixelColor( innerRemapXY(4, 4, ornament.panel), core );
+
+  // dimmer.
+  strip.setPixelColor( innerRemapXY(3, 2, ornament.panel), dim1 );
+  strip.setPixelColor( innerRemapXY(4, 2, ornament.panel), dim1 );
+  strip.setPixelColor( innerRemapXY(2, 3, ornament.panel), dim1 );
+  strip.setPixelColor( innerRemapXY(5, 3, ornament.panel), dim1 );
+  strip.setPixelColor( innerRemapXY(2, 4, ornament.panel), dim1 );
+  strip.setPixelColor( innerRemapXY(5, 4, ornament.panel), dim1 );
+  strip.setPixelColor( innerRemapXY(3, 5, ornament.panel), dim1 );
+  strip.setPixelColor( innerRemapXY(4, 5, ornament.panel), dim1 );
+
+  // dimmer still.
+  strip.setPixelColor( innerRemapXY(3, 1, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(4, 1, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(2, 2, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(5, 2, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(1, 3, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(6, 3, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(1, 4, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(6, 4, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(2, 5, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(5, 5, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(3, 6, ornament.panel), dim2 );
+  strip.setPixelColor( innerRemapXY(4, 6, ornament.panel), dim2 );
+
+  // dimmest.
+  strip.setPixelColor( innerRemapXY(2, 1, ornament.panel), fade );
+  strip.setPixelColor( innerRemapXY(5, 1, ornament.panel), fade );
+  strip.setPixelColor( innerRemapXY(1, 2, ornament.panel), fade );
+  strip.setPixelColor( innerRemapXY(6, 2, ornament.panel), fade );
+  strip.setPixelColor( innerRemapXY(1, 5, ornament.panel), fade );
+  strip.setPixelColor( innerRemapXY(6, 5, ornament.panel), fade );
+  strip.setPixelColor( innerRemapXY(2, 6, ornament.panel), fade );
+  strip.setPixelColor( innerRemapXY(5, 6, ornament.panel), fade );
+
+  ornament.lastUpdated = currentTime;
 }
 
 void makeItRain() {
@@ -387,8 +516,12 @@ uint16_t remapXY(uint8_t x, uint8_t y) {
   if (-1 == pixelBlock) {
     return -1;
   }
-  pixelBlock = pixelBlock * 64 + block[y%8][x%8];
-  return pixelBlock;
+  return innerRemapXY(x, y, pixelBlock);
+}
+
+// Remap coordinates to an actual pixel number within a panel.
+uint16_t innerRemapXY(uint8_t x, uint8_t y, uint16_t pixelBlock) {
+  return pixelBlock * 64 + block[y%8][x%8];
 }
 
 // Input a value 0 to 255 to get a color value.

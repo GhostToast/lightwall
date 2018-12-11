@@ -8,7 +8,7 @@
   #include <avr/power.h>
 #endif
 
-#define PIN 6
+#define PIN 10
 #define NUM_LEDS 896
 #define BRIGHTNESS 64
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRBW + NEO_KHZ800);
@@ -72,7 +72,8 @@ void setup() {
 void loop() {
   //processUserInput();
   //displayUserSelectedMode();
-  holidayLights();
+  rainbowCycle(768, 1, 1 );
+  //holidayLights();
 }
 
 void holidayLights() {
@@ -91,6 +92,7 @@ void holidayLights() {
   if ( ! ornamentsInitialized ) {
     for( byte i=0; i<14; i++) {
       allOrnaments[i].panel = i;
+      allOrnaments[i].interval = random( 25, 300 );
     }
     ornamentsInitialized = true;
   }
@@ -152,51 +154,61 @@ void renderOneOrnament( ornament &ornament ) {
   }
 }
 
+void processPixel( uint8_t x, uint8_t y, ornament &ornament, uint32_t color ) {
+  uint16_t currentPixel = innerRemapXY(x, y, ornament.panel);
+  uint32_t currentPixelColor = strip.getPixelColor( currentPixel );
+  if ( 0 != currentPixelColor ) {
+    color = dimColor( currentPixelColor, random(0, 17), 1 );
+  }
+  strip.setPixelColor( currentPixel, color );
+}
+
 void updateOrnamentFrame(ornament &ornament) {
   uint32_t core = strip.Color(255, 10, 0, 0);
   uint32_t dim1 = strip.Color(64, 6, 0, 0);
   uint32_t dim2 = strip.Color(32, 0, 0, 0);
   uint32_t fade = strip.Color(16, 0, 0, 0);
 
+// TODO need init color
   // core.
-  strip.setPixelColor( innerRemapXY(3, 3, ornament.panel), core );
-  strip.setPixelColor( innerRemapXY(4, 3, ornament.panel), core );
-  strip.setPixelColor( innerRemapXY(3, 4, ornament.panel), core );
-  strip.setPixelColor( innerRemapXY(4, 4, ornament.panel), core );
+  processPixel(3, 3, ornament, core );
+  processPixel(4, 3, ornament, core );
+  processPixel(3, 4, ornament, core );
+  processPixel(4, 4, ornament, core );
 
   // dimmer.
-  strip.setPixelColor( innerRemapXY(3, 2, ornament.panel), dim1 );
-  strip.setPixelColor( innerRemapXY(4, 2, ornament.panel), dim1 );
-  strip.setPixelColor( innerRemapXY(2, 3, ornament.panel), dim1 );
-  strip.setPixelColor( innerRemapXY(5, 3, ornament.panel), dim1 );
-  strip.setPixelColor( innerRemapXY(2, 4, ornament.panel), dim1 );
-  strip.setPixelColor( innerRemapXY(5, 4, ornament.panel), dim1 );
-  strip.setPixelColor( innerRemapXY(3, 5, ornament.panel), dim1 );
-  strip.setPixelColor( innerRemapXY(4, 5, ornament.panel), dim1 );
+  processPixel(3, 2, ornament, dim1 );
+  processPixel(4, 2, ornament, dim1 );
+  processPixel(2, 3, ornament, dim1 );
+  processPixel(5, 3, ornament, dim1 );
+  processPixel(2, 4, ornament, dim1 );
+  processPixel(5, 4, ornament, dim1 );
+  processPixel(3, 5, ornament, dim1 );
+  processPixel(4, 5, ornament, dim1 );
 
   // dimmer still.
-  strip.setPixelColor( innerRemapXY(3, 1, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(4, 1, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(2, 2, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(5, 2, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(1, 3, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(6, 3, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(1, 4, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(6, 4, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(2, 5, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(5, 5, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(3, 6, ornament.panel), dim2 );
-  strip.setPixelColor( innerRemapXY(4, 6, ornament.panel), dim2 );
+  processPixel(3, 1, ornament, dim2 );
+  processPixel(4, 1, ornament, dim2 );
+  processPixel(2, 2, ornament, dim2 );
+  processPixel(5, 2, ornament, dim2 );
+  processPixel(1, 3, ornament, dim2 );
+  processPixel(6, 3, ornament, dim2 );
+  processPixel(1, 4, ornament, dim2 );
+  processPixel(6, 4, ornament, dim2 );
+  processPixel(2, 5, ornament, dim2 );
+  processPixel(5, 5, ornament, dim2 );
+  processPixel(3, 6, ornament, dim2 );
+  processPixel(4, 6, ornament, dim2 );
 
   // dimmest.
-  strip.setPixelColor( innerRemapXY(2, 1, ornament.panel), fade );
-  strip.setPixelColor( innerRemapXY(5, 1, ornament.panel), fade );
-  strip.setPixelColor( innerRemapXY(1, 2, ornament.panel), fade );
-  strip.setPixelColor( innerRemapXY(6, 2, ornament.panel), fade );
-  strip.setPixelColor( innerRemapXY(1, 5, ornament.panel), fade );
-  strip.setPixelColor( innerRemapXY(6, 5, ornament.panel), fade );
-  strip.setPixelColor( innerRemapXY(2, 6, ornament.panel), fade );
-  strip.setPixelColor( innerRemapXY(5, 6, ornament.panel), fade );
+  processPixel(2, 1, ornament, fade );
+  processPixel(5, 1, ornament, fade );
+  processPixel(1, 2, ornament, fade );
+  processPixel(6, 2, ornament, fade );
+  processPixel(1, 5, ornament, fade );
+  processPixel(6, 5, ornament, fade );
+  processPixel(2, 6, ornament, fade );
+  processPixel(5, 6, ornament, fade );
 
   ornament.lastUpdated = currentTime;
 }
@@ -537,5 +549,49 @@ uint32_t Wheel(byte WheelPos) {
   }
   WheelPos -= 170;
   return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0,0);
+}
+
+void rainbowCycle(uint32_t frames , uint32_t frameAdvance, uint32_t pixelAdvance ) {
+  
+  // Hue is a number between 0 and 3*256 than defines a mix of r->g->b where
+  // hue of 0 = Full red
+  // hue of 128 = 1/2 red and 1/2 green
+  // hue of 256 = Full Green
+  // hue of 384 = 1/2 green and 1/2 blue
+  // ...
+  unsigned int firstPixelHue = 0;     // Color for the first pixel in the string
+  
+  for(unsigned int j=0; j<frames; j++) {                                  
+    unsigned int currentPixelHue = firstPixelHue;
+
+    for(unsigned int i=0; i< NUM_LEDS; i++) {
+      
+      if (currentPixelHue>=(3*256)) {                  // Normalize back down incase we incremented and overflowed
+        currentPixelHue -= (3*256);
+      }
+            
+      unsigned char phase = currentPixelHue >> 8;
+      unsigned char step = currentPixelHue & 0xff;
+                 
+      switch (phase) {
+        case 0: 
+          strip.setPixelColor( i, ~step, step,  0 );
+          break;
+          
+        case 1: 
+          strip.setPixelColor( i, 0, ~step, step );
+          break;
+
+        case 2: 
+          strip.setPixelColor( i, step, 0, ~step );
+          break;
+      }
+
+      currentPixelHue+=pixelAdvance;                                      
+
+    } 
+    strip.show();
+    firstPixelHue += frameAdvance;
+  }
 }
 

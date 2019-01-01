@@ -30,7 +30,7 @@ const uint8_t block[8][8] = {
 /**
  * The entire grid, including fake panels (denoated with -1).
  */
-const uint8_t grid[4][7] = {
+const int grid[4][7] = {
   { 0,  -1,   4,  -1,   8,  -1,  12},
   {-1,   2,  -1,   6,  -1,  10,  -1},
   { 1,  -1,   5,  -1,   9,  -1,  13},
@@ -44,7 +44,7 @@ uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
 char inputString[maxChars];
 char currentCharacter;
-int index = 0;
+int inputIndex = 0;
 int displayFlag = 0;
 char currentColorChannel;
 char displayPattern;
@@ -77,12 +77,12 @@ void loop() {
 }
 
 void holidayLights() {
-  const uint32_t arrayColors[4] = {
-    strip.Color(255, 0, 0, 0),
-    strip.Color(0, 255, 0, 0),
-    strip.Color(0, 0, 255, 0),
-    strip.Color(255, 128, 0, 0)
-  };
+//  const uint32_t arrayColors[4] = {
+//    strip.Color(255, 0, 0, 0),
+//    strip.Color(0, 255, 0, 0),
+//    strip.Color(0, 0, 255, 0),
+//    strip.Color(255, 128, 0, 0)
+//  };
 
   // Keep things randomized.
   reseedRandomness();
@@ -107,7 +107,7 @@ void holidayLights() {
 
 //  if(displayFlag == 0) {
 //    displayFlag = 1;
-//    index = 0;
+//    inputIndex = 0;
 
 //    for(uint16_t i=0; i<NUM_LEDS; i++) {
 //      if ( i % 7 ) {
@@ -347,12 +347,12 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
 void processUserInput() {
   while(Serial.available()) {
     displayFlag = 0;
-    if(index < maxChars-1){
+    if(inputIndex < maxChars-1){
       currentCharacter = Serial.read();
-      inputString[index] = currentCharacter;
+      inputString[inputIndex] = currentCharacter;
       processCharacter();
-      index++;
-      inputString[index] = '\0'; // Always null terminate.
+      inputIndex++;
+      inputString[inputIndex] = '\0'; // Always null terminate.
     }
   }
 }
@@ -361,7 +361,7 @@ void processUserInput() {
 void displayUserSelectedMode() {
   if(displayFlag == 0) {
     displayFlag = 1;
-    index = 0;
+    inputIndex = 0;
     Serial.print(inputString); // Send debug back to phone.
 
     // We only need to fire the "oneColor" once per instruction set, not continuously.
@@ -594,4 +594,3 @@ void rainbowCycle(uint32_t frames , uint32_t frameAdvance, uint32_t pixelAdvance
     firstPixelHue += frameAdvance;
   }
 }
-

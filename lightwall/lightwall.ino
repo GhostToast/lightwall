@@ -10,7 +10,7 @@
 
 #define PIN 10
 #define NUM_LEDS 896
-#define BRIGHTNESS 64
+#define BRIGHTNESS 50
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_LEDS, PIN, NEO_GRBW + NEO_KHZ800);
 
 /**
@@ -227,6 +227,7 @@ void makeItRain() {
   }
 
   // Loop through all rain columns.
+  currentTime = millis();
   for( byte i=0; i<maxWidth; i++) {
     rainOneColumn( allRainColumns[i] );
   }
@@ -282,12 +283,10 @@ void assignColumnProperties( rainColumn &rainColumn ) {
 }
 
 void rainOneColumn( rainColumn &rainColumn ) {
-  currentTime = millis();
-
   if( rainColumn.isRunning == 1 ) {
 
     // Only animate if enough time has passed. This allows each column to have its own speed.
-    if( (currentTime - rainColumn.lastUpdated ) >= rainColumn.interval ) {
+    if( (currentTime - rainColumn.lastUpdated ) > rainColumn.interval ) {
 
       // Run the animation!
       updateRainColumnFrame( rainColumn );

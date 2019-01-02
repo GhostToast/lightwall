@@ -1,14 +1,12 @@
-//#include <xmem.h>
-
 #include <Adafruit_GFX.h>
 #include <Adafruit_NeoMatrix.h>
 #include <Adafruit_NeoPixel.h>
 
-#ifdef __AVR__
-  #include <avr/power.h>
-#endif
+//#ifdef __AVR__
+//  #include <avr/power.h>
+//#endif
 
-const int PIN        =   6;
+const int PIN        =  10;
 const int WIDTH      =  56; // Actual row in pixels.
 const int HEIGHT     =  32; // Fake: accounts for 2*8 additional empty pixels per column.
 const int BRIGHTNESS =  50;
@@ -31,7 +29,7 @@ const uint8_t block[8][8] = {
 /**
  * The entire grid, including fake panels (denoated with -1).
  */
-const uint8_t grid[4][7] = {
+const int grid[4][7] = {
   { 0,  -1,   4,  -1,   8,  -1,  12},
   {-1,   2,  -1,   6,  -1,  10,  -1},
   { 1,  -1,   5,  -1,   9,  -1,  13},
@@ -41,7 +39,7 @@ const uint8_t grid[4][7] = {
 /**
  * Pacman's open and shut frames, in both left and right variants.
  */
-const unsigned short pacman[2][2][72] PROGMEM={
+const unsigned short pacman[2][2][72] = PROGMEM {
   // right open, right shut.
   {
     // open right.
@@ -112,11 +110,6 @@ Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(WIDTH, HEIGHT, PIN,
  * Setup.
  */
 void setup() {
-  Serial.begin(115200);
-
-  // Attempt to setup and utilize initial memory bank for malloc/free.
-  xmem::begin(true);
-  
   matrix.setRemapFunction(remapXY);
   matrix.setBrightness(BRIGHTNESS);
   matrix.begin();

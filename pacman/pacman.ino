@@ -6,7 +6,7 @@
 //  #include <avr/power.h>
 //#endif
 
-const int PIN        =  10;
+const int PIN        =  2;
 const int WIDTH      =  56; // Actual row in pixels.
 const int HEIGHT     =  32; // Fake: accounts for 2*8 additional empty pixels per column.
 const int BRIGHTNESS =  50;

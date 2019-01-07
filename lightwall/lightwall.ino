@@ -4,7 +4,7 @@
 #include "utilities.h"
 
 const int ledsPerStrip = 128;
-#define NUM_LEDS 512
+#define NUM_LEDS 896
 #define BRIGHTNESS 50
 DMAMEM int displayMemory[ledsPerStrip*8];
 int drawingMemory[ledsPerStrip*8];
@@ -37,7 +37,7 @@ const int grid[4][7] = {
 
 #define maxChars 32
 rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
-uint8_t maxWidth = 32;
+uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
 char inputString[maxChars];
 char currentCharacter;
@@ -120,7 +120,7 @@ void assignColumnProperties( rainColumn &rainColumn ) {
       rainColumn.color = makeColor(random(192, 256), random(0, 8), random(0, 8), 0);
       break;
     case 'g':
-      rainColumn.color = makeColor(random(0, 24), random(192, 256), random(0, 32), 0);
+      rainColumn.color = makeColor(random(0, 24), random(192, 256), random(0, 32), 0, random(32,128));
       break;
     case 'b':
       rainColumn.color = makeColor(random(0, 8), random(24, 96), random(192, 256), 0);
@@ -135,7 +135,7 @@ void assignColumnProperties( rainColumn &rainColumn ) {
       rainColumn.color = makeColor(random(192, 256), random(0, 24), random(192, 256), 0);
       break;
     default:
-      rainColumn.color = makeColor(random(0, 24), random(192, 256), random(0, 32), 0);
+      rainColumn.color = makeColor(random(0, 24), random(192, 256), random(0, 32), 0, random(32,128));
       matrixColorMode = 'g';
   }
 

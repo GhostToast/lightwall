@@ -71,6 +71,7 @@ void loop() {
   //rainbowCycle(768, 1, 1 );
   //holidayLights();
   makeItRain();
+  //Serial.println("hello server");
 }
 
 void makeItRain() {
@@ -109,34 +110,34 @@ void reseedRandomness() {
 // Assign rain Column Properties. Mostly random, maintain column, lastUpdated, and lastCompleted.
 void assignColumnProperties( rainColumn &rainColumn ) {
   rainColumn.head = 0;
-  rainColumn.headBrightness = random(24, 96);
+  rainColumn.headLightness = random(16, 32);
   rainColumn.height = random(8, 24);
   rainColumn.isRunning = 0;
   rainColumn.canGoBlack = random(0, 2);
-  rainColumn.dimAmount = random(8, 32);
+  rainColumn.dimAmount = random(2, 8);
 
   switch (matrixColorMode) {
     case 'r':
-      rainColumn.color = makeColor(random(192, 256), random(0, 8), random(0, 8), 0);
+      rainColumn.color = makeColor(random(192, 256), random(0, 8), random(0, 8), 0, BRIGHTNESS);
       break;
     case 'g':
-      rainColumn.color = makeColor(random(0, 24), random(192, 256), random(0, 32), 0, random(32,128));
+      rainColumn.color = makeColor(random(0, 24), random(192, 256), random(0, 32), 0, BRIGHTNESS);
       break;
     case 'b':
-      rainColumn.color = makeColor(random(0, 8), random(24, 96), random(192, 256), 0);
+      rainColumn.color = makeColor(random(0, 8), random(24, 96), random(192, 256), 0, BRIGHTNESS);
       break;
     case 'w':
       rainColumn.color = makeColor(0, 0, 0, random(96, 256));
       break;
     case 'o': // orange.
-      rainColumn.color = makeColor(random(96, 128), random(96, 128), random(0, 32), 0);
+      rainColumn.color = makeColor(random(96, 128), random(96, 128), random(0, 32), 0, BRIGHTNESS);
       break;
     case 'p': // purple.
-      rainColumn.color = makeColor(random(192, 256), random(0, 24), random(192, 256), 0);
+      rainColumn.color = makeColor(random(192, 256), random(0, 24), random(192, 256), 0, BRIGHTNESS);
       break;
     default:
-      rainColumn.color = makeColor(random(0, 24), random(192, 256), random(0, 32), 0, random(32,128));
-      matrixColorMode = 'g';
+      rainColumn.color = makeColor(random(0, 8), random(24, 96), random(192, 256), 0, BRIGHTNESS);
+      matrixColorMode = 'b';
   }
 
   rainColumn.interval = random(25, 115);
@@ -173,10 +174,10 @@ void rainOneColumn( rainColumn &rainColumn ) {
 
 void updateRainColumnFrame(rainColumn &rainColumn) {
 
-  // Brighten the front.
-  leds.setPixel(remapXY(rainColumn.column, rainColumn.head), brightenColor(rainColumn.color, rainColumn.headBrightness));
-  leds.setPixel(remapXY(rainColumn.column, rainColumn.head - 1), brightenColor(rainColumn.color, round(rainColumn.headBrightness * .66)));
-  leds.setPixel(remapXY(rainColumn.column, rainColumn.head - 2), brightenColor(rainColumn.color, round(rainColumn.headBrightness * .33)));
+  // Lighten the front.
+  leds.setPixel(remapXY(rainColumn.column, rainColumn.head), lightenColor(rainColumn.color, rainColumn.headLightness));
+  leds.setPixel(remapXY(rainColumn.column, rainColumn.head - 1), lightenColor(rainColumn.color, round(rainColumn.headLightness * .66)));
+  leds.setPixel(remapXY(rainColumn.column, rainColumn.head - 2), lightenColor(rainColumn.color, round(rainColumn.headLightness * .33)));
 
   // Standard color for behind the head.
   leds.setPixel(remapXY(rainColumn.column, rainColumn.head - 3), rainColumn.color);
@@ -368,15 +369,15 @@ uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack) {
     }
   }
 
-  uint32_t dimColor = makeColor(r, g, b, w);
+  uint32_t dimColor = makeColor(r, g, b, w, 0);
 
   return dimColor;
 }
 
 // Brighten a color by adding white.
-uint32_t brightenColor(uint32_t color, byte whiteAmount) {
-  uint32_t brightenColor = makeColor( red(color), green(color), blue(color), whiteAmount);
-  return brightenColor;
+uint32_t lightenColor(uint32_t color, byte whiteAmount) {
+  uint32_t lightenColor = makeColor( red(color), green(color), blue(color), whiteAmount);
+  return lightenColor;
 }
 
 // Remap coordinates to an actual pixel number. Or a non-existent one.
@@ -396,20 +397,6 @@ uint16_t innerRemapXY(uint8_t x, uint8_t y, uint16_t pixelBlock) {
   return pixelBlock * 64 + block[y % 8][x % 8];
 }
 
-// Input a value 0 to 255 to get a color value.
-// The colours are a transition r - g - b - back to r.
-uint32_t Wheel(byte WheelPos) {
-  WheelPos = 255 - WheelPos;
-  if (WheelPos < 85) {
-    return makeColor(255 - WheelPos * 3, 0, WheelPos * 3, 0);
-  }
-  if (WheelPos < 170) {
-    WheelPos -= 85;
-    return makeColor(0, WheelPos * 3, 255 - WheelPos * 3, 0);
-  }
-  WheelPos -= 170;
-  return makeColor(WheelPos * 3, 255 - WheelPos * 3, 0, 0);
-}
 
 void rainbowCycle(uint32_t frames , uint32_t frameAdvance, uint32_t pixelAdvance ) {
 

@@ -1,9 +1,12 @@
 // Make a 32-bit RGBW color.
-uint32_t makeColor(uint8_t r, uint8_t g, uint8_t b, uint8_t w=0, uint16_t brightness = 50) {
-  r = (r * brightness ) >> 8;
-  g = (g * brightness ) >> 8;
-  b = (b * brightness ) >> 8;
-  w = (w * brightness ) >> 8;
+uint32_t makeColor(uint8_t r, uint8_t g, uint8_t b, uint8_t w=0, uint8_t brightness = 0) {
+  if (brightness > 0) {
+    r = (r * brightness ) >> 8;
+    g = (g * brightness ) >> 8;
+    b = (b * brightness ) >> 8;
+    w = (w * brightness ) >> 8;
+  }
+  
   return ((uint32_t)r << 24) | ((uint32_t)g << 16) | ((uint32_t)b <<  8) | w;
 }
 

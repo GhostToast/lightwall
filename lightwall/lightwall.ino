@@ -49,10 +49,10 @@ byte rVal = 0;
 byte gVal = 0;
 byte bVal = 0;
 byte wVal = 0;
-byte rValOld = 0;
-byte gValOld = 0;
-byte bValOld = 0;
-byte wValOld = 0;
+byte rVal2 = 0;
+byte gVal2 = 0;
+byte bVal2 = 0;
+byte wVal2 = 0;
 
 const int ledsPerStrip = 128;
 #define NUM_LEDS 896
@@ -116,6 +116,9 @@ void parseData() {
   } else if (strcmp(strtokIndex, "matrix") == 0) {
     userMode = 2;
     processMatrix(strtokIndex);
+  } else if (strcmp(strtokIndex, "grade") == 0) {
+    userMode = 3;
+    processGrade(strtokIndex);
   }
 }
 
@@ -130,10 +133,29 @@ void processState() {
     Serial.print(",");
     Serial.print(wVal);
     Serial.println(">");
-  } else if (2 ==userMode) {
+  } else if (2 == userMode) {
     Serial.print("<matrix,");
     Serial.print(matrixColorMode);
     Serial.print(">");
+  } else if (3 == userMode) {
+    Serial.print("<grade,");
+    Serial.print(rVal);
+    Serial.print(",");
+    Serial.print(rVal2);
+    Serial.print(",");
+    Serial.print(gVal);
+    Serial.print(",");
+    Serial.print(gVal2);
+    Serial.print(",");
+    Serial.print(bVal);
+    Serial.print(",");
+    Serial.print(bVal2);
+    Serial.print(",");
+    Serial.print(wVal);
+    Serial.print(",");
+    Serial.print(wVal2);
+    Serial.print(",");
+    Serial.println(">");
   } else {
     //Serial.print("<fail>");
     Serial.println(1);
@@ -141,10 +163,10 @@ void processState() {
 }
 
 void processRGBW(char * strtokIndex) {
-  rValOld = rVal;
-  gValOld = gVal;
-  bValOld = bVal;
-  wValOld = wVal;
+  rVal2 = rVal;
+  gVal2 = gVal;
+  bVal2 = bVal;
+  wVal2 = wVal;
   fadeIndex = 0;
 
   // Get the next part, which should be Red value.
@@ -162,6 +184,41 @@ void processRGBW(char * strtokIndex) {
   // Get next part, which should be White value.
   strtokIndex = strtok(NULL, ",");
   wVal = atoi(strtokIndex);
+}
+
+void processGrade(char * strtokIndex) {
+
+  // Get the next part, which should be Red value.
+  strtokIndex = strtok(NULL, ",");
+  rVal = atoi(strtokIndex);
+
+  // Get the next part, which should be Red 2 value.
+  strtokIndex = strtok(NULL, ",");
+  rVal2 = atoi(strtokIndex);
+  
+  // Get next part, which should be Green value.
+  strtokIndex = strtok(NULL, ",");
+  gVal = atoi(strtokIndex);
+
+  // Get next part, which should be Green 2 value.
+  strtokIndex = strtok(NULL, ",");
+  gVal2 = atoi(strtokIndex);
+
+  // Get next part, which should be Blue value.
+  strtokIndex = strtok(NULL, ",");
+  bVal = atoi(strtokIndex);
+
+  // Get next part, which should be Blue 2 value.
+  strtokIndex = strtok(NULL, ",");
+  bVal2 = atoi(strtokIndex);
+
+  // Get next part, which should be White value.
+  strtokIndex = strtok(NULL, ",");
+  wVal = atoi(strtokIndex);
+
+  // Get next part, which should be White 2 value.
+  strtokIndex = strtok(NULL, ",");
+  wVal2 = atoi(strtokIndex);
 }
 
 void processMatrix(char * strtokIndex) {
@@ -182,9 +239,6 @@ void respondToServer() {
 }
 
 void makeItRain() {
-  // Keep things randomized.
-  // TODO get random
-  //reseedRandomness(); 
 
   // Initialize matrix if this is first run.
   static boolean matrixInitialized = false;
@@ -221,30 +275,6 @@ void assignColumnProperties( rainColumn &rainColumn ) {
     random(matrixColors[3][0], matrixColors[3][1]),
     BRIGHTNESS
   );
-
-//  switch (matrixColorMode) {
-//    case 'r':
-//      rainColumn.color = makeColor(random(192, 256), random(0, 8), random(0, 8), 0, BRIGHTNESS);
-//      break;
-//    case 'g':
-//      rainColumn.color = makeColor(random(0, 24), random(192, 256), random(0, 32), 0, BRIGHTNESS);
-//      break;
-//    case 'b':
-//      rainColumn.color = makeColor(random(0, 8), random(24, 96), random(192, 256), 0, BRIGHTNESS);
-//      break;
-//    case 'w':
-//      rainColumn.color = makeColor(0, 0, 0, random(96, 256));
-//      break;
-//    case 'o': // orange.
-//      rainColumn.color = makeColor(random(96, 128), random(96, 128), random(0, 32), 0, BRIGHTNESS);
-//      break;
-//    case 'p': // purple.
-//      rainColumn.color = makeColor(random(192, 256), random(0, 24), random(192, 256), 0, BRIGHTNESS);
-//      break;
-//    default:
-//      rainColumn.color = makeColor(random(0, 8), random(24, 96), random(192, 256), 0, BRIGHTNESS);
-//      matrixColorMode = 'b';
-//  }
 
   rainColumn.interval = random(25, 115);
   rainColumn.sleepTime = random(1000, 3000);
@@ -385,6 +415,23 @@ void oneColor(uint32_t color, uint32_t fadeColor = -1) {
   leds.show();
 }
 
+// Create a gradient fade between two colors.
+void gradient() {
+  for (uint8_t x = 0; x < maxWidth; x++) {
+    uint8_t r = ((rVal * (maxWidth - x)) + (rVal2 * x)) / maxWidth; // 255 * 56 + 0
+    uint8_t g = ((gVal * (maxWidth - x)) + (gVal2 * x)) / maxWidth;
+    uint8_t b = ((bVal * (maxWidth - x)) + (bVal2 * x)) / maxWidth;
+    uint8_t w = ((wVal * (maxWidth - x)) + (wVal2 * x)) / maxWidth;
+    uint32_t color = makeColor( r, g, b, w );
+
+    for (uint8_t y = 0; y < maxHeight; y++) {
+      leds.setPixel(remapXY(x, y), color);
+    }
+  }
+
+  leds.show();
+}
+
 void displayUserSelectedMode() {
   switch (userMode) {
     case 0: // None, dim white.
@@ -394,13 +441,16 @@ void displayUserSelectedMode() {
     case 1: // RGBW.
       if (currentTime - fadeLastTime >= fadeInterval) {
         fadeLastTime = currentTime;
-        oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rValOld, gValOld, bValOld, wValOld ));
+        oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
       }
       break;
 
     case 2: // Matrix.
       makeItRain();
       break;
+
+    case 3: // Gradient.
+      gradient();
 
     default:
       oneColor(0x00000010);

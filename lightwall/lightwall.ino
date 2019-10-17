@@ -45,6 +45,7 @@ boolean readInProgress = false;
 boolean newDataFromServer = false;
 char messageFromServer[buffSize] = {0};
 byte userMode = 0;
+byte gradientProcessed = 1;
 byte rVal = 0;
 byte gVal = 0;
 byte bVal = 0;
@@ -197,34 +198,20 @@ void processGrade(char * strtokIndex) {
   // Get the next part, which should be Red value.
   strtokIndex = strtok(NULL, ",");
   rVal = atoi(strtokIndex);
-
-  // Get the next part, which should be Red 2 value.
-//  strtokIndex = strtok(NULL, ",");
-//  rVal2 = atoi(strtokIndex);
   
   // Get next part, which should be Green value.
   strtokIndex = strtok(NULL, ",");
   gVal = atoi(strtokIndex);
-
-  // Get next part, which should be Green 2 value.
-//  strtokIndex = strtok(NULL, ",");
-//  gVal2 = atoi(strtokIndex);
-
+  
   // Get next part, which should be Blue value.
   strtokIndex = strtok(NULL, ",");
   bVal = atoi(strtokIndex);
-
-  // Get next part, which should be Blue 2 value.
-//  strtokIndex = strtok(NULL, ",");
-//  bVal2 = atoi(strtokIndex);
 
   // Get next part, which should be White value.
   strtokIndex = strtok(NULL, ",");
   wVal = atoi(strtokIndex);
 
-  // Get next part, which should be White 2 value.
-//  strtokIndex = strtok(NULL, ",");
-//  wVal2 = atoi(strtokIndex);
+  gradientProcessed = 0;
 }
 
 void processMatrix(char * strtokIndex) {
@@ -423,16 +410,19 @@ void oneColor(uint32_t color, uint32_t fadeColor = -1) {
 
 // Create a gradient fade between two colors.
 void gradient() {
-  for (uint8_t y = 0; y < maxHeight; y++) {
-    uint8_t r = ((rVal * (maxHeight - y)) + (rVal2 * y)) / maxHeight; // 255 * 56 + 0
-    uint8_t g = ((gVal * (maxHeight - y)) + (gVal2 * y)) / maxHeight;
-    uint8_t b = ((bVal * (maxHeight - y)) + (bVal2 * y)) / maxHeight;
-    uint8_t w = ((wVal * (maxHeight - y)) + (wVal2 * y)) / maxHeight;
-    uint32_t color = makeColor( r, g, b, w );
-
-    for (uint8_t x = 0; x < maxWidth; x++) {
-      leds.setPixel(remapXY(x, y), color);
-    }
+  if ( gradientProcessed == 0 ) {
+    for (uint8_t y = 0; y < maxHeight; y++) {
+      uint8_t r = ((rVal * (maxHeight - y)) + (rVal2 * y)) / maxHeight; // 255 * 56 + 0
+      uint8_t g = ((gVal * (maxHeight - y)) + (gVal2 * y)) / maxHeight;
+      uint8_t b = ((bVal * (maxHeight - y)) + (bVal2 * y)) / maxHeight;
+      uint8_t w = ((wVal * (maxHeight - y)) + (wVal2 * y)) / maxHeight;
+      uint32_t color = makeColor( r, g, b, w );
+  
+      for (uint8_t x = 0; x < maxWidth; x++) {
+        leds.setPixel(remapXY(x, y), color);
+      }
+    } 
+    gradientProcessed = 1;
   }
 
   leds.show();
@@ -457,6 +447,7 @@ void displayUserSelectedMode() {
 
     case 3: // Gradient.
       gradient();
+      break;
 
     default:
       oneColor(0x00000010);

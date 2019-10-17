@@ -188,37 +188,43 @@ void processRGBW(char * strtokIndex) {
 
 void processGrade(char * strtokIndex) {
 
+  // Store old values.
+  rVal2 = rVal;
+  gVal2 = gVal;
+  bVal2 = bVal;
+  wVal2 = wVal;
+
   // Get the next part, which should be Red value.
   strtokIndex = strtok(NULL, ",");
   rVal = atoi(strtokIndex);
 
   // Get the next part, which should be Red 2 value.
-  strtokIndex = strtok(NULL, ",");
-  rVal2 = atoi(strtokIndex);
+//  strtokIndex = strtok(NULL, ",");
+//  rVal2 = atoi(strtokIndex);
   
   // Get next part, which should be Green value.
   strtokIndex = strtok(NULL, ",");
   gVal = atoi(strtokIndex);
 
   // Get next part, which should be Green 2 value.
-  strtokIndex = strtok(NULL, ",");
-  gVal2 = atoi(strtokIndex);
+//  strtokIndex = strtok(NULL, ",");
+//  gVal2 = atoi(strtokIndex);
 
   // Get next part, which should be Blue value.
   strtokIndex = strtok(NULL, ",");
   bVal = atoi(strtokIndex);
 
   // Get next part, which should be Blue 2 value.
-  strtokIndex = strtok(NULL, ",");
-  bVal2 = atoi(strtokIndex);
+//  strtokIndex = strtok(NULL, ",");
+//  bVal2 = atoi(strtokIndex);
 
   // Get next part, which should be White value.
   strtokIndex = strtok(NULL, ",");
   wVal = atoi(strtokIndex);
 
   // Get next part, which should be White 2 value.
-  strtokIndex = strtok(NULL, ",");
-  wVal2 = atoi(strtokIndex);
+//  strtokIndex = strtok(NULL, ",");
+//  wVal2 = atoi(strtokIndex);
 }
 
 void processMatrix(char * strtokIndex) {
@@ -417,14 +423,14 @@ void oneColor(uint32_t color, uint32_t fadeColor = -1) {
 
 // Create a gradient fade between two colors.
 void gradient() {
-  for (uint8_t x = 0; x < maxWidth; x++) {
-    uint8_t r = ((rVal * (maxWidth - x)) + (rVal2 * x)) / maxWidth; // 255 * 56 + 0
-    uint8_t g = ((gVal * (maxWidth - x)) + (gVal2 * x)) / maxWidth;
-    uint8_t b = ((bVal * (maxWidth - x)) + (bVal2 * x)) / maxWidth;
-    uint8_t w = ((wVal * (maxWidth - x)) + (wVal2 * x)) / maxWidth;
+  for (uint8_t y = 0; y < maxHeight; y++) {
+    uint8_t r = ((rVal * (maxHeight - y)) + (rVal2 * y)) / maxHeight; // 255 * 56 + 0
+    uint8_t g = ((gVal * (maxHeight - y)) + (gVal2 * y)) / maxHeight;
+    uint8_t b = ((bVal * (maxHeight - y)) + (bVal2 * y)) / maxHeight;
+    uint8_t w = ((wVal * (maxHeight - y)) + (wVal2 * y)) / maxHeight;
     uint32_t color = makeColor( r, g, b, w );
 
-    for (uint8_t y = 0; y < maxHeight; y++) {
+    for (uint8_t x = 0; x < maxWidth; x++) {
       leds.setPixel(remapXY(x, y), color);
     }
   }

@@ -30,6 +30,7 @@ rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
 char matrixColorMode = 'g';
+byte matrixPaused = 0;
 uint8_t matrixColors[4][2];
 unsigned long currentTime = 0;
 unsigned long fadeLastTime = 0;
@@ -120,6 +121,9 @@ void parseData() {
   } else if (strcmp(strtokIndex, "grade") == 0) {
     userMode = 3;
     processGrade(strtokIndex);
+  } else if (strcmp(strtokIndex, "pause") == 0) {
+    userMode = 4;
+    processMatrixPause(strtokIndex);
   }
 }
 
@@ -142,20 +146,15 @@ void processState() {
     Serial.print("<grade,");
     Serial.print(rVal);
     Serial.print(",");
-    Serial.print(rVal2);
-    Serial.print(",");
     Serial.print(gVal);
-    Serial.print(",");
-    Serial.print(gVal2);
     Serial.print(",");
     Serial.print(bVal);
     Serial.print(",");
-    Serial.print(bVal2);
-    Serial.print(",");
     Serial.print(wVal);
-    Serial.print(",");
-    Serial.print(wVal2);
-    Serial.print(",");
+    Serial.println(">");
+  } else if (4 == userMode) {
+    Serial.print("<pause,");
+    Serial.print(matrixPaused);
     Serial.println(">");
   } else {
     //Serial.print("<fail>");
@@ -214,6 +213,12 @@ void processGrade(char * strtokIndex) {
   gradientProcessed = 0;
 }
 
+void processMatrixPause(char * strtokIndex) {
+  // Get paused status (boolean).
+  strtokIndex = strtok(NULL, ",");
+  matrixPaused = atoi(strtokIndex);
+}
+
 void processMatrix(char * strtokIndex) {
   // Fill up matrix colors.
   for (byte i = 0; i < 4; i++) {
@@ -232,6 +237,9 @@ void respondToServer() {
 }
 
 void makeItRain() {
+  if ( matrixPaused ) {
+    return;
+  }
 
   // Initialize matrix if this is first run.
   static boolean matrixInitialized = false;
@@ -447,6 +455,10 @@ void displayUserSelectedMode() {
 
     case 3: // Gradient.
       gradient();
+      break;
+
+    case 4: // Pause matrix.
+      makeItRain();
       break;
 
     default:

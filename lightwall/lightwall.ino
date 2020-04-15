@@ -454,7 +454,7 @@ void gradient() {
 
 void fireStarter() {
   if ( ! fireStart ) {
-    //return;
+    return;
   }
 
   if ( (currentTime - globalLastTime) < fireSpeed ) {
@@ -464,7 +464,7 @@ void fireStarter() {
   // Color bottom row.
   for (uint8_t x = 0; x < maxWidth; x++) {
     for (uint8_t y = 0; y < maxHeight; y++) {
-     leds.setPixel(remapXY(x, y), makeColor(random(32,128), random(8,64), random(0,16), 0));
+     leds.setPixel(remapXY(x, y), hsvRgb(random(0,32), 255, 32));
     }
   }
   leds.show();

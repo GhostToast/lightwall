@@ -29,11 +29,13 @@ const int grid[4][7] = {
 rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
+byte fireStart = 0;
+byte fireSpeed = 100;
 char matrixColorMode = 'g';
 byte matrixPaused = 0;
 uint8_t matrixColors[4][2];
 unsigned long currentTime = 0;
-unsigned long fadeLastTime = 0;
+unsigned long globalLastTime = 0;
 byte fadeSteps = 32;
 byte fadeIndex = 0;
 byte fadeInterval = 10;
@@ -124,6 +126,9 @@ void parseData() {
   } else if (strcmp(strtokIndex, "pause") == 0) {
     userMode = 4;
     processMatrixPause(strtokIndex);
+  } else if (strcmp(strtokIndex, "fire") == 0) {
+    userMode = 5;
+    processFire(strtokIndex);
   }
 }
 
@@ -155,6 +160,10 @@ void processState() {
   } else if (4 == userMode) {
     Serial.print("<pause,");
     Serial.print(matrixPaused);
+    Serial.println(">");
+  } else if (5 == userMode) {
+    Serial.print("<fire,");
+    Serial.print(fireStart);
     Serial.println(">");
   } else {
     //Serial.print("<fail>");
@@ -213,6 +222,12 @@ void processGrade(char * strtokIndex) {
   gradientProcessed = 0;
 }
 
+void processFire(char * strtokIndex) {
+  // Get fire boolean status.
+  strtokIndex = strtok(NULL, ",");
+  fireStart = atoi(strtokIndex);
+}
+
 void processMatrixPause(char * strtokIndex) {
   // Get paused status (boolean).
   strtokIndex = strtok(NULL, ",");
@@ -220,6 +235,7 @@ void processMatrixPause(char * strtokIndex) {
 }
 
 void processMatrix(char * strtokIndex) {
+  matrixPaused = 0;
   // Fill up matrix colors.
   for (byte i = 0; i < 4; i++) {
     for (byte z = 0; z <2; z++) {
@@ -436,6 +452,26 @@ void gradient() {
   leds.show();
 }
 
+void fireStarter() {
+  if ( ! fireStart ) {
+    //return;
+  }
+
+  if ( (currentTime - globalLastTime) < fireSpeed ) {
+    return;
+  }
+
+  // Color bottom row.
+  for (uint8_t x = 0; x < maxWidth; x++) {
+    for (uint8_t y = 0; y < maxHeight; y++) {
+     leds.setPixel(remapXY(x, y), makeColor(random(32,128), random(8,64), random(0,16), 0));
+    }
+  }
+  leds.show();
+
+  globalLastTime = currentTime;
+}
+
 void displayUserSelectedMode() {
   switch (userMode) {
     case 0: // None, dim white.
@@ -443,8 +479,8 @@ void displayUserSelectedMode() {
       break;
 
     case 1: // RGBW.
-      if (currentTime - fadeLastTime >= fadeInterval) {
-        fadeLastTime = currentTime;
+      if (currentTime - globalLastTime >= fadeInterval) {
+        globalLastTime = currentTime;
         oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
       }
       break;
@@ -459,6 +495,10 @@ void displayUserSelectedMode() {
 
     case 4: // Pause matrix.
       makeItRain();
+      break;
+
+    case 5: // Fire starter.
+      fireStarter();
       break;
 
     default:

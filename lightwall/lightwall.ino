@@ -29,7 +29,7 @@ const int grid[4][7] = {
 rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
-byte fireStart = 0;
+byte firePaused = 0;
 byte fireSpeed = 100;
 uint8_t fireBuffer[56][32];
 uint32_t firePalette[256];
@@ -165,7 +165,7 @@ void processState() {
     Serial.println(">");
   } else if (5 == userMode) {
     Serial.print("<fire,");
-    Serial.print(fireStart);
+    Serial.print(firePaused);
     Serial.println(">");
   } else {
     //Serial.print("<fail>");
@@ -227,7 +227,7 @@ void processGrade(char * strtokIndex) {
 void processFire(char * strtokIndex) {
   // Get fire boolean status.
   strtokIndex = strtok(NULL, ",");
-  fireStart = atoi(strtokIndex);
+  firePaused = atoi(strtokIndex);
 }
 
 void processMatrixPause(char * strtokIndex) {
@@ -376,8 +376,6 @@ uint16_t innerRemapXY(uint8_t x, uint8_t y, uint16_t pixelBlock) {
   return pixelBlock * 64 + block[y % 8][x % 8];
 }
 
-
-
 // Calculate diminishing version of a color.
 uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack) {
   uint8_t r1 = red(color);
@@ -455,7 +453,7 @@ void gradient() {
 }
 
 void fireStarter() {
-  if ( ! fireStart ) {
+  if ( firePaused ) {
     oneColor(0);
     return;
   }
@@ -474,7 +472,7 @@ void fireStarter() {
     }
     // Generate palette.
     for (uint16_t x = 0; x <256; x++) {
-      firePalette[x] = hsl2rgb(x/3, 100, min(50, x/2));
+      firePalette[x] = hsl2rgb(x/3.2, 100, min(50, x/2));
     }
     fireInitialized = true;  
   }
@@ -501,7 +499,7 @@ void fireStarter() {
   uint8_t i = 0;
   for (uint8_t y = 0; y < maxHeight; y++) {
     for (uint8_t x = 0; x < maxWidth; x++) {
-      leds.setPixel(remapXY(x, y), firePalette[fireBuffer[x][y]]);
+      leds.setPixel(remapXY(x, y), dimColor( firePalette[fireBuffer[x][y]], random(0, 8), 1));
       //leds.setPixel(remapXY(x, y), firePalette[i % 256]);
       i++;
     }

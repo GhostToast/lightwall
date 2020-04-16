@@ -30,7 +30,7 @@ rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
 byte firePaused = 0;
-byte fireSpeed = 110;
+byte fireSpeed = 80;
 uint8_t fireBuffer[56][32];
 uint32_t firePalette[256];
 char matrixColorMode = 'g';
@@ -471,15 +471,17 @@ void fireStarter() {
       }
     }
     // Generate palette.
+    // @TODO put control for user to shift hue.
+    uint16_t hueShift = 0;
     for (uint16_t x = 0; x <256; x++) {
-      firePalette[x] = hsl2rgb(x/3.2, 100, min(50, x/2));
+      firePalette[x] = hsl2rgb((x/3.2)+hueShift, 100, min(50, x/2));
     }
     fireInitialized = true;  
   }
 
   // Fill bottom row with random palette values.
   for (uint8_t x = 0; x < maxWidth; x++) {
-    if (random(0,2)){
+    if (! random(0,5)){
       fireBuffer[x][maxHeight-1] = random(0, 255); 
     }
   }

@@ -30,7 +30,7 @@ rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
 byte firePaused = 0;
-byte fireSpeed = 100;
+byte fireSpeed = 110;
 uint8_t fireBuffer[56][32];
 uint32_t firePalette[256];
 char matrixColorMode = 'g';
@@ -479,7 +479,9 @@ void fireStarter() {
 
   // Fill bottom row with random palette values.
   for (uint8_t x = 0; x < maxWidth; x++) {
-   fireBuffer[x][maxHeight-1] = random(0, 255); 
+    if (random(0,2)){
+      fireBuffer[x][maxHeight-1] = random(0, 255); 
+    }
   }
 
   // Fill the buffer with a palette color (0-255).

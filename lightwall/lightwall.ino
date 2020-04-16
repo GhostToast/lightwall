@@ -31,6 +31,8 @@ uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
 byte fireStart = 0;
 byte fireSpeed = 100;
+uint8_t fireBuffer[56][32];
+uint32_t firePalette[256];
 char matrixColorMode = 'g';
 byte matrixPaused = 0;
 uint8_t matrixColors[4][2];
@@ -454,6 +456,7 @@ void gradient() {
 
 void fireStarter() {
   if ( ! fireStart ) {
+    oneColor(0);
     return;
   }
 
@@ -461,12 +464,46 @@ void fireStarter() {
     return;
   }
 
-  // Color bottom row.
-  for (uint8_t x = 0; x < maxWidth; x++) {
+  static boolean fireInitialized = false;
+  if ( ! fireInitialized ) {
+    // Set buffers to 0.
     for (uint8_t y = 0; y < maxHeight; y++) {
-     leds.setPixel(remapXY(x, y), hsvRgb(random(0,32), 255, 32));
+      for (uint8_t x = 0; x < maxWidth; x++) {
+        fireBuffer[x][y] = 0;
+      }
+    }
+    // Generate palette.
+    for (uint8_t x = 0; x <256; x++) {
+      //firePalette[x] = hsi2rgbw(round(x/3), 1, min(255, x*2)/255);
+      firePalette[x] = makeColor(100, 0, 0, 0);
+    }
+    fireInitialized = true;  
+  }
+
+  // Fill bottom row with random palette values.
+  for (uint8_t x = 0; x < maxWidth; x++) {
+   fireBuffer[x][maxHeight-1] = random(0, 255); 
+  }
+
+  // Fill the buffer with a palette color (0-255).
+  for (uint8_t y = 0; y < maxHeight-1; y++) {
+    for (uint8_t x = 0; x < maxWidth; x++) {
+      fireBuffer[x][y] = min( 255, round( (
+          fireBuffer[(x-1+maxWidth) % maxWidth][(y+1) % maxHeight]
+        + fireBuffer[(x) % maxWidth][(y+1) % maxHeight]
+        + fireBuffer[(x+1) % maxWidth][(y+1) % maxHeight]
+        + fireBuffer[(x) % maxWidth][(y+2) % maxHeight]
+        * 32 ) / 129
+      ) );
     }
   }
+
+  // Set the LEDs based on the buffer and palette.
+  for (uint8_t y = 0; y < maxHeight; y++) {
+    for (uint8_t x = 0; x < maxWidth; x++) {
+      leds.setPixel(remapXY(x, y), firePalette[fireBuffer[x][y]]);
+    }
+  }  
   leds.show();
 
   globalLastTime = currentTime;

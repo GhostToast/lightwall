@@ -473,9 +473,8 @@ void fireStarter() {
       }
     }
     // Generate palette.
-    for (uint8_t x = 0; x <256; x++) {
-      //firePalette[x] = hsi2rgbw(round(x/3), 1, min(255, x*2)/255);
-      firePalette[x] = makeColor(100, 0, 0, 0);
+    for (uint16_t x = 0; x <256; x++) {
+      firePalette[x] = hsi2rgbw(round(x/3), 1, abs(1-min(255, x*2)/255));
     }
     fireInitialized = true;  
   }

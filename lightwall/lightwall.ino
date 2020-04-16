@@ -474,7 +474,7 @@ void fireStarter() {
     }
     // Generate palette.
     for (uint16_t x = 0; x <256; x++) {
-      firePalette[x] = hsi2rgbw(round(x/3), 1, abs(1-min(255, x*2)/255));
+      firePalette[x] = hsl2rgb(x/3, 100, min(50, x/2));
     }
     fireInitialized = true;  
   }
@@ -492,15 +492,18 @@ void fireStarter() {
         + fireBuffer[(x) % maxWidth][(y+1) % maxHeight]
         + fireBuffer[(x+1) % maxWidth][(y+1) % maxHeight]
         + fireBuffer[(x) % maxWidth][(y+2) % maxHeight]
-        * 32 ) / 129
+        * 16 ) / 23
       ) );
     }
   }
 
   // Set the LEDs based on the buffer and palette.
+  uint8_t i = 0;
   for (uint8_t y = 0; y < maxHeight; y++) {
     for (uint8_t x = 0; x < maxWidth; x++) {
       leds.setPixel(remapXY(x, y), firePalette[fireBuffer[x][y]]);
+      //leds.setPixel(remapXY(x, y), firePalette[i % 256]);
+      i++;
     }
   }  
   leds.show();

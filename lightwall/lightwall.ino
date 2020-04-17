@@ -29,6 +29,7 @@ const int grid[4][7] = {
 rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
+byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
 uint8_t fireBuffer[56][32];
@@ -175,13 +176,7 @@ void processState() {
     Serial.println(">");
   } else if (5 == userMode) {
     Serial.print("<fire,");
-    Serial.print(rVal);
-    Serial.print(",");
-    Serial.print(gVal);
-    Serial.print(",");
-    Serial.print(bVal);
-    Serial.print(",");
-    Serial.print(wVal);
+    Serial.print(fireHueShift);
     Serial.println(">");
   } else if (6 == userMode) {
     Serial.print("<firepause,");
@@ -254,28 +249,16 @@ void processGrade(char * strtokIndex) {
 
 void processFire(char * strtokIndex) {
   // Get fire settings.
-  rVal2 = rVal;
-  gVal2 = gVal;
-  bVal2 = bVal;
-  wVal2 = wVal;
-  fadeIndex = 0;
+//  rVal2 = rVal;
+//  gVal2 = gVal;
+//  bVal2 = bVal;
+//  wVal2 = wVal;
+//  fadeIndex = 0;
 
-  // Get the next part, which should be Red value.
+  // Get the next part, which should be fireHueShift value.
   strtokIndex = strtok(NULL, ",");
-  rVal = atoi(strtokIndex);
-
-  // Get next part, which should be Green value.
-  strtokIndex = strtok(NULL, ",");
-  gVal = atoi(strtokIndex);
-
-  // Get next part, which should be Blue value.
-  strtokIndex = strtok(NULL, ",");
-  bVal = atoi(strtokIndex);
-
-  // Get next part, which should be White value.
-  strtokIndex = strtok(NULL, ",");
-  wVal = atoi(strtokIndex);
-
+  fireHueShift = atoi(strtokIndex);
+  fireInitialized = 0;
   firePaused = 0;
 }
 
@@ -283,6 +266,9 @@ void processFirePause(char * strtokIndex) {
   // Get fire boolean status.
   strtokIndex = strtok(NULL, ",");
   firePaused = atoi(strtokIndex);
+  if (firePaused) {
+    fireInitialized = 0;
+  }
 }
 
 void processMatrixPause(char * strtokIndex) {
@@ -320,6 +306,12 @@ void processHSL(char * strtokIndex) {
   // Get next part, which should be Lightness value.
   strtokIndex = strtok(NULL, ",");
   lVal = atoi(strtokIndex);
+
+  uint32_t color = hsl2rgb(hVal, sVal, lVal);
+  rVal = red(color);
+  gVal = green(color);
+  bVal = blue(color);
+  wVal = 0;
 }
 
 void respondToServer() {
@@ -537,7 +529,7 @@ void fireStarter() {
     return;
   }
 
-  static boolean fireInitialized = false;
+
   if ( ! fireInitialized ) {
     // Set buffers to 0.
     for (uint8_t y = 0; y < maxHeight; y++) {
@@ -546,10 +538,8 @@ void fireStarter() {
       }
     }
     // Generate palette.
-    // @TODO put control for user to shift hue.
-    uint16_t hueShift = 0;
     for (uint16_t x = 0; x <256; x++) {
-      firePalette[x] = hsl2rgb((x/3.4)+hueShift, 100, min(50, x/4));
+      firePalette[x] = hsl2rgb((x/3.4)+fireHueShift, 100, min(50, x/4));
     }
     fireInitialized = true;  
   }
@@ -616,6 +606,13 @@ void displayUserSelectedMode() {
 
     case 6: // Pause fire.
       fireStarter();
+      break;
+
+    case 7: // HSL.
+      if (currentTime - globalLastTime >= fadeInterval) {
+        globalLastTime = currentTime;
+        oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
+      }
       break;
 
     default:

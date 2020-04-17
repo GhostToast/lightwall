@@ -266,12 +266,11 @@ void processGrade(char * strtokIndex) {
 }
 
 void processFire(char * strtokIndex) {
-  // Get fire settings.
-
   // Get the next part, which should be fireHueShift value.
   strtokIndex = strtok(NULL, ",");
   fireHueShift = atoi(strtokIndex);
   firePaused = 0;
+  specialFire = 0;
 }
 
 void processFirePause(char * strtokIndex) {
@@ -281,6 +280,7 @@ void processFirePause(char * strtokIndex) {
   if (firePaused) {
     fireInitialized = 0;
   }
+  specialFire = 0;
 }
 
 void processMatrixPause(char * strtokIndex) {

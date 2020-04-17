@@ -40,9 +40,10 @@ byte matrixPaused = 0;
 uint8_t matrixColors[4][2];
 unsigned long currentTime = 0;
 unsigned long globalLastTime = 0;
+unsigned long hslLastTime = 0;
 byte fadeSteps = 32;
 byte fadeIndex = 0;
-byte fadeInterval = 10;
+uint16_t fadeInterval = 20;
 const byte buffSize = 40;
 char inputBuffer[buffSize];
 const char startMarker = '<';
@@ -61,6 +62,8 @@ byte rVal2 = 0;
 byte gVal2 = 0;
 byte bVal2 = 0;
 byte wVal2 = 0;
+byte specialHSL = 0;
+uint16_t hslInterval = 500;
 uint16_t hVal = 0;
 byte sVal = 0;
 byte lVal = 0;
@@ -139,9 +142,12 @@ void parseData() {
   } else if (strcmp(strtokIndex, "firepause") == 0) {
     userMode = 6;
     processFirePause(strtokIndex);
-  } else if ( strcmp(strtokIndex, "hsl") == 0) {
+  } else if (strcmp(strtokIndex, "hsl") == 0) {
     userMode = 7;
     processHSL(strtokIndex);
+  } else if (strcmp(strtokIndex, "specialhsl") == 0) {
+    userMode = 8;
+    processSpecialHSL(strtokIndex); 
   }
 }
 
@@ -189,6 +195,10 @@ void processState() {
     Serial.print(sVal);
     Serial.print(",");
     Serial.print(lVal);
+    Serial.println(">");
+  } else if (8 == userMode) {
+    Serial.print("<specialhsl,");
+    Serial.print(specialHSL);
     Serial.println(">");
   } else {
     //Serial.print("<fail>");
@@ -249,16 +259,10 @@ void processGrade(char * strtokIndex) {
 
 void processFire(char * strtokIndex) {
   // Get fire settings.
-//  rVal2 = rVal;
-//  gVal2 = gVal;
-//  bVal2 = bVal;
-//  wVal2 = wVal;
-//  fadeIndex = 0;
 
   // Get the next part, which should be fireHueShift value.
   strtokIndex = strtok(NULL, ",");
   fireHueShift = atoi(strtokIndex);
-  fireInitialized = 0;
   firePaused = 0;
 }
 
@@ -312,6 +316,11 @@ void processHSL(char * strtokIndex) {
   gVal = green(color);
   bVal = blue(color);
   wVal = 0;
+}
+
+void processSpecialHSL(char * strtokIndex) {
+  strtokIndex = strtok(NULL, ",");
+  specialHSL = atoi(strtokIndex);
 }
 
 void respondToServer() {
@@ -499,6 +508,34 @@ void oneColor(uint32_t color, uint32_t fadeColor = -1) {
   leds.show();
 }
 
+// Special HSL such as rainbow.
+void doSpecialHSL() {
+  if (1==specialHSL) {
+    if (currentTime - globalLastTime >= fadeInterval) {
+      globalLastTime = currentTime;
+      if ( (currentTime - hslLastTime ) > hslInterval ) {
+        hslLastTime = currentTime;
+        hVal++;
+        if (hVal == 360) {
+          hVal = 0;
+        }
+        rVal2 = rVal;
+        gVal2 = gVal;
+        bVal2 = bVal;
+        wVal2 = wVal;
+
+        uint32_t newColor = hsl2rgb(hVal, 100, 10);
+        rVal = red(newColor);
+        gVal = green(newColor);
+        bVal = blue(newColor);
+        wVal = 0;
+      }
+            
+      oneColor(makeColor(rVal, gVal, bVal, wVal), makeColor( rVal2, gVal2, bVal2, wVal2 ));
+    }
+  }
+}
+
 // Create a gradient fade between two colors.
 void gradient() {
   if ( gradientProcessed == 0 ) {
@@ -537,12 +574,14 @@ void fireStarter() {
         fireBuffer[x][y] = 0;
       }
     }
-    // Generate palette.
-    for (uint16_t x = 0; x <256; x++) {
-      firePalette[x] = hsl2rgb((x/3.4)+fireHueShift, 100, min(50, x/4));
-    }
-    fireInitialized = true;  
+    fireInitialized = true; 
   }
+
+  // Generate palette.
+  for (uint16_t x = 0; x <256; x++) {
+    firePalette[x] = hsl2rgb((x/3.4)+fireHueShift, 100, min(50, x/4));
+  }
+     
 
   // Fill bottom row with random palette values.
   for (uint8_t x = 0; x < maxWidth; x++) {
@@ -613,6 +652,10 @@ void displayUserSelectedMode() {
         globalLastTime = currentTime;
         oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
       }
+      break;
+
+    case 8: // Special HSL.
+      doSpecialHSL();
       break;
 
     default:

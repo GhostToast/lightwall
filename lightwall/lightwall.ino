@@ -35,6 +35,7 @@ byte fireSpeed = 80;
 uint8_t fireBuffer[56][32];
 uint32_t firePalette[256];
 uint16_t fireHueShift = 0;
+byte specialFire = 0;
 char matrixColorMode = 'g';
 byte matrixPaused = 0;
 uint8_t matrixColors[4][2];
@@ -43,7 +44,7 @@ unsigned long globalLastTime = 0;
 unsigned long hslLastTime = 0;
 byte fadeSteps = 32;
 byte fadeIndex = 0;
-uint16_t fadeInterval = 20;
+uint16_t fadeInterval = 15;
 const byte buffSize = 40;
 char inputBuffer[buffSize];
 const char startMarker = '<';
@@ -63,7 +64,7 @@ byte gVal2 = 0;
 byte bVal2 = 0;
 byte wVal2 = 0;
 byte specialHSL = 0;
-uint16_t hslInterval = 500;
+uint16_t hslInterval = 300;
 uint16_t hVal = 0;
 byte sVal = 0;
 byte lVal = 0;
@@ -148,6 +149,9 @@ void parseData() {
   } else if (strcmp(strtokIndex, "specialhsl") == 0) {
     userMode = 8;
     processSpecialHSL(strtokIndex); 
+  } else if (strcmp(strtokIndex, "specialfire") == 0) {
+    userMode = 9;
+    processSpecialFire(strtokIndex);
   }
 }
 
@@ -199,6 +203,10 @@ void processState() {
   } else if (8 == userMode) {
     Serial.print("<specialhsl,");
     Serial.print(specialHSL);
+    Serial.println(">");
+  } else if (9 == userMode) {
+    Serial.print("<specialfire,");
+    Serial.print(specialFire);
     Serial.println(">");
   } else {
     //Serial.print("<fail>");
@@ -321,6 +329,11 @@ void processHSL(char * strtokIndex) {
 void processSpecialHSL(char * strtokIndex) {
   strtokIndex = strtok(NULL, ",");
   specialHSL = atoi(strtokIndex);
+}
+
+void processSpecialFire(char * strtokIndex) {
+  strtokIndex = strtok(NULL, ",");
+  specialFire = atoi(strtokIndex);
 }
 
 void respondToServer() {
@@ -508,7 +521,7 @@ void oneColor(uint32_t color, uint32_t fadeColor = -1) {
   leds.show();
 }
 
-// Special HSL such as rainbow.
+// Special HSL such as rainbow.+
 void doSpecialHSL() {
   if (1==specialHSL) {
     if (currentTime - globalLastTime >= fadeInterval) {
@@ -575,6 +588,17 @@ void fireStarter() {
       }
     }
     fireInitialized = true; 
+  }
+
+  if (1==specialFire) {
+    globalLastTime = currentTime;
+    if ( (currentTime - hslLastTime ) > hslInterval ) {
+      hslLastTime = currentTime;
+      fireHueShift++;
+      if (fireHueShift == 360) {
+        fireHueShift = 0;
+      }
+    }
   }
 
   // Generate palette.
@@ -656,6 +680,10 @@ void displayUserSelectedMode() {
 
     case 8: // Special HSL.
       doSpecialHSL();
+      break;
+
+    case 9: // Special Fire.
+      fireStarter();
       break;
 
     default:

@@ -33,6 +33,7 @@ byte firePaused = 0;
 byte fireSpeed = 80;
 uint8_t fireBuffer[56][32];
 uint32_t firePalette[256];
+uint16_t fireHueShift = 0;
 char matrixColorMode = 'g';
 byte matrixPaused = 0;
 uint8_t matrixColors[4][2];
@@ -59,6 +60,9 @@ byte rVal2 = 0;
 byte gVal2 = 0;
 byte bVal2 = 0;
 byte wVal2 = 0;
+uint16_t hVal = 0;
+byte sVal = 0;
+byte lVal = 0;
 
 const int ledsPerStrip = 128;
 #define NUM_LEDS 896
@@ -125,12 +129,18 @@ void parseData() {
   } else if (strcmp(strtokIndex, "grade") == 0) {
     userMode = 3;
     processGrade(strtokIndex);
-  } else if (strcmp(strtokIndex, "pause") == 0) {
+  } else if (strcmp(strtokIndex, "pausematrix") == 0) {
     userMode = 4;
     processMatrixPause(strtokIndex);
   } else if (strcmp(strtokIndex, "fire") == 0) {
     userMode = 5;
     processFire(strtokIndex);
+  } else if (strcmp(strtokIndex, "firepause") == 0) {
+    userMode = 6;
+    processFirePause(strtokIndex);
+  } else if ( strcmp(strtokIndex, "hsl") == 0) {
+    userMode = 7;
+    processHSL(strtokIndex);
   }
 }
 
@@ -160,12 +170,30 @@ void processState() {
     Serial.print(wVal);
     Serial.println(">");
   } else if (4 == userMode) {
-    Serial.print("<pause,");
+    Serial.print("<matrixpause,");
     Serial.print(matrixPaused);
     Serial.println(">");
   } else if (5 == userMode) {
     Serial.print("<fire,");
+    Serial.print(rVal);
+    Serial.print(",");
+    Serial.print(gVal);
+    Serial.print(",");
+    Serial.print(bVal);
+    Serial.print(",");
+    Serial.print(wVal);
+    Serial.println(">");
+  } else if (6 == userMode) {
+    Serial.print("<firepause,");
     Serial.print(firePaused);
+    Serial.println(">");
+  } else if (7 == userMode) {
+    Serial.print("<hsl,");
+    Serial.print(hVal);
+    Serial.print(",");
+    Serial.print(sVal);
+    Serial.print(",");
+    Serial.print(lVal);
     Serial.println(">");
   } else {
     //Serial.print("<fail>");
@@ -225,6 +253,33 @@ void processGrade(char * strtokIndex) {
 }
 
 void processFire(char * strtokIndex) {
+  // Get fire settings.
+  rVal2 = rVal;
+  gVal2 = gVal;
+  bVal2 = bVal;
+  wVal2 = wVal;
+  fadeIndex = 0;
+
+  // Get the next part, which should be Red value.
+  strtokIndex = strtok(NULL, ",");
+  rVal = atoi(strtokIndex);
+
+  // Get next part, which should be Green value.
+  strtokIndex = strtok(NULL, ",");
+  gVal = atoi(strtokIndex);
+
+  // Get next part, which should be Blue value.
+  strtokIndex = strtok(NULL, ",");
+  bVal = atoi(strtokIndex);
+
+  // Get next part, which should be White value.
+  strtokIndex = strtok(NULL, ",");
+  wVal = atoi(strtokIndex);
+
+  firePaused = 0;
+}
+
+void processFirePause(char * strtokIndex) {
   // Get fire boolean status.
   strtokIndex = strtok(NULL, ",");
   firePaused = atoi(strtokIndex);
@@ -245,6 +300,26 @@ void processMatrix(char * strtokIndex) {
       matrixColors[i][z] = atoi(strtokIndex);
     }
   }
+}
+
+void processHSL(char * strtokIndex) {
+  rVal2 = rVal;
+  gVal2 = gVal;
+  bVal2 = bVal;
+  wVal2 = wVal;
+  fadeIndex = 0;
+
+  // Get the next part, which should be Hue value.
+  strtokIndex = strtok(NULL, ",");
+  hVal = atoi(strtokIndex);
+
+  // Get next part, which should be Saturation value.
+  strtokIndex = strtok(NULL, ",");
+  sVal = atoi(strtokIndex);
+
+  // Get next part, which should be Lightness value.
+  strtokIndex = strtok(NULL, ",");
+  lVal = atoi(strtokIndex);
 }
 
 void respondToServer() {
@@ -474,7 +549,7 @@ void fireStarter() {
     // @TODO put control for user to shift hue.
     uint16_t hueShift = 0;
     for (uint16_t x = 0; x <256; x++) {
-      firePalette[x] = hsl2rgb((x/3.2)+hueShift, 100, min(50, x/2));
+      firePalette[x] = hsl2rgb((x/3.4)+hueShift, 100, min(50, x/4));
     }
     fireInitialized = true;  
   }
@@ -494,18 +569,15 @@ void fireStarter() {
         + fireBuffer[(x) % maxWidth][(y+1) % maxHeight]
         + fireBuffer[(x+1) % maxWidth][(y+1) % maxHeight]
         + fireBuffer[(x) % maxWidth][(y+2) % maxHeight]
-        * 16 ) / 23
+        * 16 ) / 22
       ) );
     }
   }
 
   // Set the LEDs based on the buffer and palette.
-  uint8_t i = 0;
   for (uint8_t y = 0; y < maxHeight; y++) {
     for (uint8_t x = 0; x < maxWidth; x++) {
       leds.setPixel(remapXY(x, y), dimColor( firePalette[fireBuffer[x][y]], random(0, 8), 1));
-      //leds.setPixel(remapXY(x, y), firePalette[i % 256]);
-      i++;
     }
   }  
   leds.show();
@@ -539,6 +611,10 @@ void displayUserSelectedMode() {
       break;
 
     case 5: // Fire starter.
+      fireStarter();
+      break;
+
+    case 6: // Pause fire.
       fireStarter();
       break;
 

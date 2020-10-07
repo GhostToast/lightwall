@@ -33,7 +33,7 @@ uint8_t maxHeight = 32;
 cell allCells[56][32]; // Array to hold all "cell" structs.
 byte lifeInitialized = 0;
 byte lifePaused = 0;
-byte lifeSpeed = 80;
+byte lifeSpeed = 160;
 byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
@@ -331,7 +331,6 @@ void processLife(char * strtokIndex) {
   bVal2 = bVal;
   wVal2 = wVal;
   lifePaused = 0;
-  fadeIndex = 0;
 
   // Get the next part, which should be Red value.
   strtokIndex = strtok(NULL, ",");
@@ -348,6 +347,13 @@ void processLife(char * strtokIndex) {
   // Get next part, which should be White value.
   strtokIndex = strtok(NULL, ",");
   wVal = atoi(strtokIndex);
+
+  for ( byte w = 0; w < maxWidth; w++) {
+    for ( byte h = 0; h < maxHeight; h++) {
+      allCells[w][h].color = makeColor(rVal, gVal, bVal, wVal);
+    }
+  }
+  
 }
 
 void processLifePause(char * strtokIndex) {
@@ -636,24 +642,43 @@ void lifeStart() {
 
   // Initialize cells if this is first run.
   if ( ! lifeInitialized ) {
+    oneColor(0);
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
-        allCells[w][h].alive = random(0,2);
+        allCells[w][h].isAlive = random(0,2);
       }
     }
     lifeInitialized = true;
   }
 
+  uint8_t neighborCount = 0;
+
   if ( currentTime - globalLastTime >= lifeSpeed ) {
     globalLastTime = currentTime;
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
-        if ( allCells[w][h].alive ) {
-          leds.setPixel(remapXY(w, h), makeColor(rVal, gVal, bVal, wVal));
-        } else {
+
+        neighborCount = getNeighborCount(w, h);
+        if ( allCells[w][h].isAlive && neighborCount < 2 ) {
           leds.setPixel(remapXY(w, h), 0);
+          allCells[w][h].newLife = 0;
+        } else if ( allCells[w][h].isAlive && ( neighborCount == 2 || neighborCount == 3 ) ) {
+          leds.setPixel(remapXY(w, h), allCells[w][h].color);
+          allCells[w][h].newLife = 1;
+        } else if ( allCells[w][h].isAlive && neighborCount > 3 ) {
+          leds.setPixel(remapXY(w, h), 0);
+          allCells[w][h].newLife = 0;
+        } else if ( ! allCells[w][h].isAlive && neighborCount == 3 ) {
+          leds.setPixel(remapXY(w, h), allCells[w][h].color);
+          allCells[w][h].newLife = 1;
         }
-        
+      }
+    }
+
+    // Set living status for next generation.
+    for ( byte w = 0; w < maxWidth; w++) {
+      for ( byte h = 0; h < maxHeight; h++) {
+        allCells[w][h].isAlive = allCells[w][h].newLife;
       }
     }
   }
@@ -667,42 +692,42 @@ uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
   y++;
 
   // Check cell above.
-  if ( allCells[ x - 1 ][ ( (y - 1) % maxHeight ) - 1 ].alive ) {
+  if ( allCells[ x - 1 ][ ( (y - 1) % maxHeight ) - 1 ].isAlive ) {
     count++;
   }
 
   // Check cell upper right.
-  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ ( (y - 1) % maxHeight ) - 1 ].alive ) {
+  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ ( (y - 1) % maxHeight ) - 1 ].isAlive ) {
     count++;
   }
 
   // Check cell on right.
-  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ y - 1 ].alive ) {
+  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ y - 1 ].isAlive ) {
     count++;
   }
 
   // Check cell lower right.
-  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ ( (y + 1) % maxHeight ) - 1 ].alive ) {
+  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ ( (y + 1) % maxHeight ) - 1 ].isAlive ) {
     count++;
   }
 
   // Check cell below.
-  if ( allCells[ x - 1 ][ ( (y + 1) % maxHeight ) - 1 ].alive ) {
+  if ( allCells[ x - 1 ][ ( (y + 1) % maxHeight ) - 1 ].isAlive ) {
     count++;
   }
 
   // Check cell lower left.
-  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ ( (y + 1) % maxHeight ) - 1 ].alive ) {
+  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ ( (y + 1) % maxHeight ) - 1 ].isAlive ) {
     count++;
   }
 
   // Check cell on left.
-  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ y - 1 ].alive ) {
+  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ y - 1 ].isAlive ) {
     count++;
   }
 
   // Check cell upper left.
-  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ ( (y - 1) % maxHeight ) - 1 ].alive ) {
+  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ ( (y - 1) % maxHeight ) - 1 ].isAlive ) {
     count++;
   }
 

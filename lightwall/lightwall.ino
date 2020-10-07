@@ -1,5 +1,6 @@
 #include <OctoSK6812.h>
 #include "rainColumn.h"
+#include "cell.h"
 #include "utilities.h"
 
 /**
@@ -29,6 +30,7 @@ const int grid[4][7] = {
 rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
+cell allCells[56][32]; // Array to hold all "cell" structs.
 byte lifeInitialized = 0;
 byte lifePaused = 0;
 byte lifeSpeed = 80;
@@ -158,7 +160,7 @@ void parseData() {
   } else if (strcmp(strtokIndex, "life") == 0) {
     userMode = 10;
     processLife(strtokIndex);
-  } else if (strcmp(strtokIndex, "pauselife") == 0) {
+  } else if (strcmp(strtokIndex, "lifepause") == 0) {
     userMode = 11;
     processLifePause(strtokIndex);
   }
@@ -328,6 +330,7 @@ void processLife(char * strtokIndex) {
   gVal2 = gVal;
   bVal2 = bVal;
   wVal2 = wVal;
+  lifePaused = 0;
   fadeIndex = 0;
 
   // Get the next part, which should be Red value.
@@ -631,11 +634,79 @@ void lifeStart() {
     return;
   }
 
-  if (currentTime - globalLastTime >= fadeInterval) {
-    globalLastTime = currentTime;
-    oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
+  // Initialize cells if this is first run.
+  if ( ! lifeInitialized ) {
+    for ( byte w = 0; w < maxWidth; w++) {
+      for ( byte h = 0; h < maxHeight; h++) {
+        allCells[w][h].alive = random(0,2);
+      }
+    }
+    lifeInitialized = true;
   }
-  
+
+  if ( currentTime - globalLastTime >= lifeSpeed ) {
+    globalLastTime = currentTime;
+    for ( byte w = 0; w < maxWidth; w++) {
+      for ( byte h = 0; h < maxHeight; h++) {
+        if ( allCells[w][h].alive ) {
+          leds.setPixel(remapXY(w, h), makeColor(rVal, gVal, bVal, wVal));
+        } else {
+          leds.setPixel(remapXY(w, h), 0);
+        }
+        
+      }
+    }
+  }
+  leds.show();
+}
+
+uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
+  uint8_t count = 0;
+
+  x++;
+  y++;
+
+  // Check cell above.
+  if ( allCells[ x - 1 ][ ( (y - 1) % maxHeight ) - 1 ].alive ) {
+    count++;
+  }
+
+  // Check cell upper right.
+  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ ( (y - 1) % maxHeight ) - 1 ].alive ) {
+    count++;
+  }
+
+  // Check cell on right.
+  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ y - 1 ].alive ) {
+    count++;
+  }
+
+  // Check cell lower right.
+  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ ( (y + 1) % maxHeight ) - 1 ].alive ) {
+    count++;
+  }
+
+  // Check cell below.
+  if ( allCells[ x - 1 ][ ( (y + 1) % maxHeight ) - 1 ].alive ) {
+    count++;
+  }
+
+  // Check cell lower left.
+  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ ( (y + 1) % maxHeight ) - 1 ].alive ) {
+    count++;
+  }
+
+  // Check cell on left.
+  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ y - 1 ].alive ) {
+    count++;
+  }
+
+  // Check cell upper left.
+  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ ( (y - 1) % maxHeight ) - 1 ].alive ) {
+    count++;
+  }
+
+  return count;
 }
 
 void fireStarter() {

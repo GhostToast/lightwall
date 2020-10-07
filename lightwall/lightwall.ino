@@ -29,6 +29,9 @@ const int grid[4][7] = {
 rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 56;
 uint8_t maxHeight = 32;
+byte lifeInitialized = 0;
+byte lifePaused = 0;
+byte lifeSpeed = 80;
 byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
@@ -152,6 +155,12 @@ void parseData() {
   } else if (strcmp(strtokIndex, "specialfire") == 0) {
     userMode = 9;
     processSpecialFire(strtokIndex);
+  } else if (strcmp(strtokIndex, "life") == 0) {
+    userMode = 10;
+    processLife(strtokIndex);
+  } else if (strcmp(strtokIndex, "pauselife") == 0) {
+    userMode = 11;
+    processLifePause(strtokIndex);
   }
 }
 
@@ -207,6 +216,20 @@ void processState() {
   } else if (9 == userMode) {
     Serial.print("<specialfire,");
     Serial.print(specialFire);
+    Serial.println(">");
+  } else if (10 == userMode){
+    Serial.print("<life,");
+    Serial.print(rVal);
+    Serial.print(",");
+    Serial.print(gVal);
+    Serial.print(",");
+    Serial.print(bVal);
+    Serial.print(",");
+    Serial.print(wVal);
+    Serial.println(">");
+  } else if (11 == userMode) {
+    Serial.print("<lifepause,");
+    Serial.print(lifePaused);
     Serial.println(">");
   } else {
     //Serial.print("<fail>");
@@ -297,6 +320,39 @@ void processMatrix(char * strtokIndex) {
       strtokIndex = strtok(NULL, ",");
       matrixColors[i][z] = atoi(strtokIndex);
     }
+  }
+}
+
+void processLife(char * strtokIndex) {
+  rVal2 = rVal;
+  gVal2 = gVal;
+  bVal2 = bVal;
+  wVal2 = wVal;
+  fadeIndex = 0;
+
+  // Get the next part, which should be Red value.
+  strtokIndex = strtok(NULL, ",");
+  rVal = atoi(strtokIndex);
+
+  // Get next part, which should be Green value.
+  strtokIndex = strtok(NULL, ",");
+  gVal = atoi(strtokIndex);
+
+  // Get next part, which should be Blue value.
+  strtokIndex = strtok(NULL, ",");
+  bVal = atoi(strtokIndex);
+
+  // Get next part, which should be White value.
+  strtokIndex = strtok(NULL, ",");
+  wVal = atoi(strtokIndex);
+}
+
+void processLifePause(char * strtokIndex) {
+  // Get paused status (boolean).
+  strtokIndex = strtok(NULL, ",");
+  lifePaused = atoi(strtokIndex);
+  if (lifePaused) {
+    lifeInitialized = 0;
   }
 }
 
@@ -569,6 +625,19 @@ void gradient() {
   leds.show();
 }
 
+void lifeStart() {
+  if ( lifePaused ) {
+    oneColor(0);
+    return;
+  }
+
+  if (currentTime - globalLastTime >= fadeInterval) {
+    globalLastTime = currentTime;
+    oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
+  }
+  
+}
+
 void fireStarter() {
   if ( firePaused ) {
     oneColor(0);
@@ -578,7 +647,6 @@ void fireStarter() {
   if ( (currentTime - globalLastTime) < fireSpeed ) {
     return;
   }
-
 
   if ( ! fireInitialized ) {
     // Set buffers to 0.
@@ -684,6 +752,14 @@ void displayUserSelectedMode() {
 
     case 9: // Special Fire.
       fireStarter();
+      break;
+
+    case 10: // Conway's Game of Life.
+      lifeStart();
+      break;
+
+    case 11: // Pause life.
+      lifeStart();
       break;
 
     default:

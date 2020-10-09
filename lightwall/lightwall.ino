@@ -767,7 +767,7 @@ uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
   }
 
   // Check cell below.
-  if ( allCells[ x ][ ( below(y) ].currentColor ) {
+  if ( allCells[ x ][ below(y) ].currentColor ) {
     count++;
   }
 

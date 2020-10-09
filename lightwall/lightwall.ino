@@ -33,7 +33,10 @@ uint8_t maxHeight = 32;
 cell allCells[56][32]; // Array to hold all "cell" structs.
 byte lifeInitialized = 0;
 byte lifePaused = 0;
-uint32_t lifeSpeed = 800;
+uint32_t lifeSpeed = 250;
+byte lifeFadeSteps = 16;
+byte lifeFadeIndex = 0;
+uint16_t lifeFadeInterval = 10;
 byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
@@ -637,7 +640,7 @@ void lifeStart() {
   // Initialize cells if this is first run.
   if ( ! lifeInitialized ) {
     oneColor(0);
-    fadeIndex = 0;
+    lifeFadeIndex = 0;
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
 
@@ -661,7 +664,7 @@ void lifeStart() {
   // Update next generation.
   if ( currentTime - lifeLastTime >= lifeSpeed ) {
     lifeLastTime = currentTime;
-    fadeIndex = 0;
+    lifeFadeIndex = 0;
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
 
@@ -687,38 +690,26 @@ void lifeStart() {
   }
 
   // Transition to next generation.
-  if ( currentTime - globalLastTime >= fadeInterval && fadeIndex <= fadeSteps ) {
+  if ( currentTime - globalLastTime >= lifeFadeInterval && lifeFadeIndex <= lifeFadeSteps ) {
     globalLastTime = currentTime;
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
         if ( allCells[w][h].currentColor != allCells[w][h].nextColor ) {
           // It's dying, fade out.
-          rTemp = ((red(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (red(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
-          gTemp = ((green(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (green(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
-          bTemp = ((blue(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (blue(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
-          wTemp = ((white(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (white(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
-
+          rTemp = ((red(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (red(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
+          gTemp = ((green(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (green(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
+          bTemp = ((blue(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (blue(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
+          wTemp = ((white(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (white(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
+          
           leds.setPixel( remapXY(w, h), makeColor( rTemp, gTemp, bTemp, wTemp ) );
-        } else if ( allCells[w][h].currentColor == 0 && allCells[w][h].nextColor > 0 ) {
-          // It's being born, fade in.
-//          rTemp = ((red(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (red(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
-//          gTemp = ((green(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (green(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
-//          bTemp = ((blue(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (blue(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
-//          wTemp = ((white(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (white(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
-//          rTemp = ((red(allCells[w][h].nextColor) * (fadeSteps - fadeIndex)) + (red(allCells[w][h].currentColor) * fadeIndex)) / fadeSteps;
-//          gTemp = ((green(allCells[w][h].nextColor) * (fadeSteps - fadeIndex)) + (green(allCells[w][h].currentColor) * fadeIndex)) / fadeSteps;
-//          bTemp = ((blue(allCells[w][h].nextColor) * (fadeSteps - fadeIndex)) + (blue(allCells[w][h].currentColor) * fadeIndex)) / fadeSteps;
-//          wTemp = ((white(allCells[w][h].nextColor) * (fadeSteps - fadeIndex)) + (white(allCells[w][h].currentColor) * fadeIndex)) / fadeSteps;
-
-//          leds.setPixel( remapXY(w, h), makeColor( rTemp, gTemp, bTemp, wTemp ) );
         }
       }
     }
-    fadeIndex++;
+    lifeFadeIndex++;
   }
 
   // Prep for next generation.
-  if ( fadeIndex > fadeSteps ) {
+  if ( lifeFadeIndex > lifeFadeSteps || currentTime - lifeLastTime >= lifeSpeed ) {
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
         allCells[w][h].currentColor = allCells[w][h].nextColor;

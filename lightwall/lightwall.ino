@@ -33,7 +33,7 @@ uint8_t maxHeight = 32;
 cell allCells[56][32]; // Array to hold all "cell" structs.
 byte lifeInitialized = 0;
 byte lifePaused = 0;
-byte lifeSpeed = 160;
+uint32_t lifeSpeed = 1000;
 byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
@@ -645,7 +645,7 @@ void lifeStart() {
     oneColor(0);
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
-        allCells[w][h].isAlive = random(0,2);
+        allCells[w][h].isAlive = random(1,101) > 80;
       }
     }
     lifeInitialized = true;
@@ -660,15 +660,23 @@ void lifeStart() {
 
         neighborCount = getNeighborCount(w, h);
         if ( allCells[w][h].isAlive && neighborCount < 2 ) {
+          // Cell dies with less than 2 neighbors.
           leds.setPixel(remapXY(w, h), 0);
           allCells[w][h].newLife = 0;
         } else if ( allCells[w][h].isAlive && ( neighborCount == 2 || neighborCount == 3 ) ) {
+          // Cell continues living if 2 or 3 neighbors.
           leds.setPixel(remapXY(w, h), allCells[w][h].color);
           allCells[w][h].newLife = 1;
-        } else if ( allCells[w][h].isAlive && neighborCount > 3 ) {
+        } else if ( allCells[w][h].isAlive && allCells[w][h].isAlive && neighborCount > 3 ) {
+          // Cell dies is more than 3 neighbors.
           leds.setPixel(remapXY(w, h), 0);
           allCells[w][h].newLife = 0;
-        } else if ( ! allCells[w][h].isAlive && neighborCount == 3 ) {
+        } else if ( ! allCells[w][h].isAlive && neighborCount == 3 ) { // 3 || 6 = high life.
+          // New life spawns if exactly 3 neighbors.
+          leds.setPixel(remapXY(w, h), allCells[w][h].color);
+          allCells[w][h].newLife = 1;
+        } else if ( ! allCells[w][h].isAlive && neighborCount > 0 && ( random(1, 101) > 99 ) ) {
+          // Chance of spontaneous life to keep from going stagnant.
           leds.setPixel(remapXY(w, h), allCells[w][h].color);
           allCells[w][h].newLife = 1;
         }

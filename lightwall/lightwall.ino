@@ -154,7 +154,7 @@ void parseData() {
     processHSL(strtokIndex);
   } else if (strcmp(strtokIndex, "specialhsl") == 0) {
     userMode = 8;
-    processSpecialHSL(strtokIndex); 
+    processSpecialHSL(strtokIndex);
   } else if (strcmp(strtokIndex, "specialfire") == 0) {
     userMode = 9;
     processSpecialFire(strtokIndex);
@@ -275,11 +275,11 @@ void processGrade(char * strtokIndex) {
   // Get the next part, which should be Red value.
   strtokIndex = strtok(NULL, ",");
   rVal = atoi(strtokIndex);
-  
+
   // Get next part, which should be Green value.
   strtokIndex = strtok(NULL, ",");
   gVal = atoi(strtokIndex);
-  
+
   // Get next part, which should be Blue value.
   strtokIndex = strtok(NULL, ",");
   bVal = atoi(strtokIndex);
@@ -530,7 +530,7 @@ uint32_t dimColor(uint32_t color, byte dimAmount, bool canGoBlack) {
   uint8_t g1 = green(color);
   uint8_t b1 = blue(color);
   uint8_t w1 = white(color);
-  
+
   // Subtract R, G and B components until zero, except dominant color.
   uint8_t r2 = max( 0, r1 - dimAmount );
   uint8_t g2 = max( 0, g1 - dimAmount );
@@ -602,7 +602,7 @@ void doSpecialHSL() {
         bVal = blue(newColor);
         wVal = 0;
       }
-            
+
       oneColor(makeColor(rVal, gVal, bVal, wVal), makeColor( rVal2, gVal2, bVal2, wVal2 ));
     }
   }
@@ -617,11 +617,11 @@ void gradient() {
       uint8_t b = ((bVal * (maxHeight - y)) + (bVal2 * y)) / maxHeight;
       uint8_t w = ((wVal * (maxHeight - y)) + (wVal2 * y)) / maxHeight;
       uint32_t color = makeColor( r, g, b, w );
-  
+
       for (uint8_t x = 0; x < maxWidth; x++) {
         leds.setPixel(remapXY(x, y), color);
       }
-    } 
+    }
     gradientProcessed = 1;
   }
 
@@ -697,7 +697,7 @@ void lifeStart() {
           gTemp = ((green(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (green(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
           bTemp = ((blue(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (blue(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
           wTemp = ((white(allCells[w][h].currentColor) * (fadeSteps - fadeIndex)) + (white(allCells[w][h].nextColor) * fadeIndex)) / fadeSteps;
-          
+
           leds.setPixel( remapXY(w, h), makeColor( rTemp, gTemp, bTemp, wTemp ) );
         } else if ( allCells[w][h].currentColor == 0 && allCells[w][h].nextColor > 0 ) {
           // It's being born, fade in.
@@ -709,7 +709,7 @@ void lifeStart() {
 //          gTemp = ((green(allCells[w][h].nextColor) * (fadeSteps - fadeIndex)) + (green(allCells[w][h].currentColor) * fadeIndex)) / fadeSteps;
 //          bTemp = ((blue(allCells[w][h].nextColor) * (fadeSteps - fadeIndex)) + (blue(allCells[w][h].currentColor) * fadeIndex)) / fadeSteps;
 //          wTemp = ((white(allCells[w][h].nextColor) * (fadeSteps - fadeIndex)) + (white(allCells[w][h].currentColor) * fadeIndex)) / fadeSteps;
-          
+
 //          leds.setPixel( remapXY(w, h), makeColor( rTemp, gTemp, bTemp, wTemp ) );
         }
       }
@@ -730,49 +730,59 @@ void lifeStart() {
   leds.show();
 }
 
+uint8_t above( uint8_t y ) {
+  return ( ( y + maxHeight - 1 ) % maxHeight );
+}
+uint8_t below( uint8_t y ) {
+  return ( ( y + maxHeight + 1 ) % maxHeight );
+}
+uint8_t left( uint8_t x ) {
+  return ( ( x + maxWidth - 1 ) % maxWidth );
+}
+uint8_t right( uint8_t x ) {
+  return ( ( x + maxWidth + 1 ) % maxWidth );
+}
+
 uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
   uint8_t count = 0;
 
-  x++;
-  y++;
-
   // Check cell above.
-  if ( allCells[ x - 1 ][ ( (y - 1) % maxHeight ) - 1 ].currentColor ) {
+  if ( allCells[ x ][ above(y) ].currentColor ) {
     count++;
   }
 
   // Check cell upper right.
-  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ ( (y - 1) % maxHeight ) - 1 ].currentColor ) {
+  if ( allCells[ right(x) ][ above(y) ].currentColor ) {
     count++;
   }
 
   // Check cell on right.
-  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ y - 1 ].currentColor ) {
+  if ( allCells[ right(x) ][ y ].currentColor ) {
     count++;
   }
 
   // Check cell lower right.
-  if ( allCells[ ( (x + 1) % maxWidth ) - 1 ][ ( (y + 1) % maxHeight ) - 1 ].currentColor ) {
+  if ( allCells[ right(x) ][ below(y) ].currentColor ) {
     count++;
   }
 
   // Check cell below.
-  if ( allCells[ x - 1 ][ ( (y + 1) % maxHeight ) - 1 ].currentColor ) {
+  if ( allCells[ x ][ ( below(y) ].currentColor ) {
     count++;
   }
 
   // Check cell lower left.
-  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ ( (y + 1) % maxHeight ) - 1 ].currentColor ) {
+  if ( allCells[ left(x) ][ below(y) ].currentColor ) {
     count++;
   }
 
   // Check cell on left.
-  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ y - 1 ].currentColor ) {
+  if ( allCells[ left(x) ][ y ].currentColor ) {
     count++;
   }
 
   // Check cell upper left.
-  if ( allCells[ ( (x - 1) % maxWidth ) - 1 ][ ( (y - 1) % maxHeight ) - 1 ].currentColor ) {
+  if ( allCells[ left(x) ][ above(y) ].currentColor ) {
     count++;
   }
 
@@ -796,7 +806,7 @@ void fireStarter() {
         fireBuffer[x][y] = 0;
       }
     }
-    fireInitialized = true; 
+    fireInitialized = true;
   }
 
   if (1==specialFire) {
@@ -814,12 +824,12 @@ void fireStarter() {
   for (uint16_t x = 0; x <256; x++) {
     firePalette[x] = hsl2rgb((x/3.4)+fireHueShift, 100, min(50, x/4));
   }
-     
+
 
   // Fill bottom row with random palette values.
   for (uint8_t x = 0; x < maxWidth; x++) {
     if (! random(0,5)){
-      fireBuffer[x][maxHeight-1] = random(0, 255); 
+      fireBuffer[x][maxHeight-1] = random(0, 255);
     }
   }
 
@@ -841,7 +851,7 @@ void fireStarter() {
     for (uint8_t x = 0; x < maxWidth; x++) {
       leds.setPixel(remapXY(x, y), dimColor( firePalette[fireBuffer[x][y]], random(0, 8), 1));
     }
-  }  
+  }
   leds.show();
 
   globalLastTime = currentTime;

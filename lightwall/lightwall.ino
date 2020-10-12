@@ -648,6 +648,7 @@ void lifeStart() {
         if ( random(1,101) > 80 ) {
           allCells[w][h].currentColor = makeColor(rVal, gVal, bVal, wVal);
           allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
+          allCells[w][h].isAlive = 1;
           leds.setPixel( remapXY(w, h), makeColor(rVal, gVal, bVal, wVal) );
         }
       }
@@ -669,21 +670,26 @@ void lifeStart() {
       for ( byte h = 0; h < maxHeight; h++) {
 
         neighborCount = getNeighborCount(w, h);
-        if ( allCells[w][h].currentColor && neighborCount < 2 ) {
+        if ( allCells[w][h].isAlive && neighborCount < 2 ) {
           // Cell dies with less than 2 neighbors.
+          allCells[w][h].newLife = 0;
           allCells[w][h].nextColor = 0;
-        } else if ( allCells[w][h].currentColor && ( neighborCount == 2 || neighborCount == 3 ) ) {
+        } else if ( allCells[w][h].isAlive && ( neighborCount == 2 || neighborCount == 3 ) ) {
           // Cell continues living if 2 or 3 neighbors.
-          allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
-        } else if ( allCells[w][h].currentColor && allCells[w][h].currentColor && neighborCount > 3 ) {
+          allCells[w][h].newLife = 1;
+        } else if ( allCells[w][h].isAlive && neighborCount > 3 ) {
           // Cell dies is more than 3 neighbors.
+          allCells[w][h].newLife = 0;
           allCells[w][h].nextColor = 0;
-        } else if ( ! allCells[w][h].currentColor && neighborCount == 3 ) { // 3 || 6 = high life.
+        } else if ( ! allCells[w][h].isAlive && neighborCount == 3 ) { // 3 || 6 = high life.
           // New life spawns if exactly 3 neighbors.
-          allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
-        } else if ( ! allCells[w][h].currentColor && neighborCount > 0 && ( random(1, 101) > 99 ) ) {
+          allCells[w][h].newLife = 1;
+        } else if ( ! allCells[w][h].isAlive && neighborCount > 0 && ( random(1, 101) > 99 ) ) {
           // Chance of spontaneous life to keep from going stagnant.
-          allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
+          allCells[w][h].newLife = 1;
+        } else {
+          // Undo genetic colore pre-generation.
+          allCells[w][h].nextColor = 0;
         }
       }
     }
@@ -695,7 +701,6 @@ void lifeStart() {
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
         if ( allCells[w][h].currentColor != allCells[w][h].nextColor ) {
-          // It's dying, fade out.
           rTemp = ((red(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (red(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           gTemp = ((green(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (green(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           bTemp = ((blue(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (blue(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
@@ -713,6 +718,7 @@ void lifeStart() {
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
         allCells[w][h].currentColor = allCells[w][h].nextColor;
+        allCells[w][h].isAlive = allCells[w][h].newLife;
         leds.setPixel( remapXY(w, h), allCells[w][h].currentColor );
       }
     }
@@ -736,45 +742,77 @@ uint8_t right( uint8_t x ) {
 
 uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
   uint8_t count = 0;
+  uint32_t parents[8];
 
   // Check cell above.
-  if ( allCells[ x ][ above(y) ].currentColor ) {
+  if ( allCells[ x ][ above(y) ].isAlive ) {
     count++;
+    parents[0] = allCells[ x ][ above(y) ].currentColor;
   }
 
   // Check cell upper right.
-  if ( allCells[ right(x) ][ above(y) ].currentColor ) {
+  if ( allCells[ right(x) ][ above(y) ].isAlive ) {
     count++;
+    parents[1] = allCells[ right(x) ][ above(y) ].currentColor;
   }
 
   // Check cell on right.
-  if ( allCells[ right(x) ][ y ].currentColor ) {
+  if ( allCells[ right(x) ][ y ].isAlive ) {
     count++;
+    parents[2] = allCells[ right(x) ][ y ].currentColor;
   }
 
   // Check cell lower right.
-  if ( allCells[ right(x) ][ below(y) ].currentColor ) {
+  if ( allCells[ right(x) ][ below(y) ].isAlive ) {
     count++;
+    parents[3] = allCells[ right(x) ][ below(y) ].currentColor;
   }
 
   // Check cell below.
-  if ( allCells[ x ][ below(y) ].currentColor ) {
+  if ( allCells[ x ][ below(y) ].isAlive ) {
     count++;
+    parents[4] = allCells[ x ][ below(y) ].currentColor;
   }
 
   // Check cell lower left.
-  if ( allCells[ left(x) ][ below(y) ].currentColor ) {
+  if ( allCells[ left(x) ][ below(y) ].isAlive ) {
     count++;
+    parents[5] = allCells[ x ][ below(y) ].currentColor;
   }
 
   // Check cell on left.
-  if ( allCells[ left(x) ][ y ].currentColor ) {
+  if ( allCells[ left(x) ][ y ].isAlive ) {
     count++;
+    parents[6] = allCells[ left(x) ][ y ].currentColor;
   }
 
   // Check cell upper left.
-  if ( allCells[ left(x) ][ above(y) ].currentColor ) {
+  if ( allCells[ left(x) ][ above(y) ].isAlive ) {
     count++;
+    parents[7] = allCells[ left(x) ][ above(y) ].currentColor;
+  }
+
+  // If this cell could be born, calculate it's color based on blend of two "parents".
+  if ( count ) {
+    byte parent1 = random(0,count);
+    byte parent2 = random(0,count);
+
+    if ( parent1 == parent2 ) {
+      parent2 = parent1 % count;
+    }
+
+    uint8_t rTemp = 0;
+    uint8_t gTemp = 0;
+    uint8_t bTemp = 0;
+    uint8_t wTemp = 0;
+
+    uint8_t geneIndex = random(0, 17);
+
+    rTemp = ((red(parents[parent1]) * (16 - geneIndex)) + (red(parents[parent2]) * geneIndex)) / 16;
+    gTemp = ((green(parents[parent1]) * (16 - geneIndex)) + (green(parents[parent2]) * geneIndex)) / 16;
+    bTemp = ((blue(parents[parent1]) * (16 - geneIndex)) + (blue(parents[parent2]) * geneIndex)) / 16;
+    wTemp = ((white(parents[parent1]) * (16 - geneIndex)) + (white(parents[parent2]) * geneIndex)) / 16;
+    allCells[x][y].nextColor = makeColor(rTemp, gTemp, bTemp, wTemp);
   }
 
   return count;

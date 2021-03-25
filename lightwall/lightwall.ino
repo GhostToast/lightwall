@@ -17,6 +17,14 @@ const uint8_t block[8][8] = {
   {7,   8,  23,  24,  39,  40,  55,  56}
 };
 
+// Just the outer rim.
+const uint8_t perimeter[30] = {
+  0,  1,   2,  3,  4,  5,  6,  7,
+  8,  15, 16, 23, 24, 31, 32, 39,
+  40, 47, 48, 55, 56, 57, 58, 59,
+  60, 61, 62, 63
+};
+
 /**
    The entire grid, including fake panels (denoated with -1).
 */
@@ -72,6 +80,7 @@ byte rVal2 = 0;
 byte gVal2 = 0;
 byte bVal2 = 0;
 byte wVal2 = 0;
+byte rgbwShape = 0;
 byte specialHSL = 0;
 uint16_t hslInterval = 300;
 uint16_t hVal = 0;
@@ -194,6 +203,8 @@ void processState() {
     Serial.print(bVal);
     Serial.print(",");
     Serial.print(wVal);
+    Serial.print(",");
+    Serial.print(rgbwShape);
     Serial.println(">");
   } else if (4 == userMode) {
     Serial.print("<matrixpause,");
@@ -265,6 +276,10 @@ void processRGBW(char * strtokIndex) {
   // Get next part, which should be White value.
   strtokIndex = strtok(NULL, ",");
   wVal = atoi(strtokIndex);
+
+  // Get next part, which should be RGBW mode (shape).
+  strtokIndex = strtok(NULL, ",");
+  rgbwShape = atoi(strtokIndex);
 }
 
 void processGrade(char * strtokIndex) {
@@ -567,6 +582,26 @@ uint32_t lightenColor(uint32_t color, byte whiteAmount) {
   return lightenColor;
 }
 
+// Instructs all panels to display a color around just the perimeter.
+void perimeterColor(uint32_t color, uint32_t fadeColor = -1) {
+  if (fadeColor >= 0 && color != fadeColor && fadeIndex <= fadeSteps) {
+      uint8_t r = ((red(fadeColor) * (fadeSteps - fadeIndex)) + (red(color) * fadeIndex)) / fadeSteps;
+      uint8_t g = ((green(fadeColor) * (fadeSteps - fadeIndex)) + (green(color) * fadeIndex)) / fadeSteps;
+      uint8_t b = ((blue(fadeColor) * (fadeSteps - fadeIndex)) + (blue(color) * fadeIndex)) / fadeSteps;
+      uint8_t w = ((white(fadeColor) * (fadeSteps - fadeIndex)) + (white(color) * fadeIndex)) / fadeSteps;
+      color = makeColor( r, g, b, w );
+      fadeIndex++;
+  }
+  // For each panel.
+  for (uint8_t panel = 0; panel < 14; panel++) {
+    // For each pixel within the perimeter.
+    for (uint8_t pixel = 0; pixel < 30; pixel++) {
+      leds.setPixel(panel * 64 + perimeter[pixel], color);
+    }
+  }
+  leds.show();
+}
+
 // Instructs all LED to display the same color, then renders.
 void oneColor(uint32_t color, uint32_t fadeColor = -1) {
   if (fadeColor >= 0 && color != fadeColor && fadeIndex <= fadeSteps) {
@@ -581,6 +616,17 @@ void oneColor(uint32_t color, uint32_t fadeColor = -1) {
     leds.setPixel(i, color);
   }
   leds.show();
+}
+
+void doRGBW() {
+  if (currentTime - globalLastTime >= fadeInterval) {
+    globalLastTime = currentTime;
+    if (rgbwShape == 0){
+      oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
+    } else if (rgbwShape == 1){
+      perimeterColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
+    }
+  }
 }
 
 // Special HSL such as rainbow.+
@@ -855,10 +901,7 @@ void displayUserSelectedMode() {
       break;
 
     case 1: // RGBW.
-      if (currentTime - globalLastTime >= fadeInterval) {
-        globalLastTime = currentTime;
-        oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
-      }
+      doRGBW();
       break;
 
     case 2: // Matrix.

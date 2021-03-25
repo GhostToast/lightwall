@@ -80,7 +80,7 @@ byte rVal2 = 0;
 byte gVal2 = 0;
 byte bVal2 = 0;
 byte wVal2 = 0;
-byte rgbwMode = 0;
+byte rgbwShape = 0;
 byte specialHSL = 0;
 uint16_t hslInterval = 300;
 uint16_t hVal = 0;
@@ -203,6 +203,8 @@ void processState() {
     Serial.print(bVal);
     Serial.print(",");
     Serial.print(wVal);
+    Serial.print(",");
+    Serial.print(rgbwShape);
     Serial.println(">");
   } else if (4 == userMode) {
     Serial.print("<matrixpause,");
@@ -277,7 +279,7 @@ void processRGBW(char * strtokIndex) {
 
   // Get next part, which should be RGBW mode (shape).
   strtokIndex = strtok(NULL, ",");
-  rgbwMode = atoi(strtokIndex);
+  rgbwShape = atoi(strtokIndex);
 }
 
 void processGrade(char * strtokIndex) {
@@ -619,9 +621,9 @@ void oneColor(uint32_t color, uint32_t fadeColor = -1) {
 void doRGBW() {
   if (currentTime - globalLastTime >= fadeInterval) {
     globalLastTime = currentTime;
-    if (rgbwMode == 0){
+    if (rgbwShape == 0){
       oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
-    } else if (rgbwMode == 1){
+    } else if (rgbwShape == 1){
       perimeterColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
     }
   }

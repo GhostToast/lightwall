@@ -236,13 +236,11 @@ void processState() {
     Serial.println(">");
   } else if (10 == userMode){
     Serial.print("<life,");
-    Serial.print(rVal);
+    Serial.print(hVal);
     Serial.print(",");
-    Serial.print(gVal);
+    Serial.print(sVal);
     Serial.print(",");
-    Serial.print(bVal);
-    Serial.print(",");
-    Serial.print(wVal);
+    Serial.print(lVal);
     Serial.println(">");
   } else if (11 == userMode) {
     Serial.print("<lifepause,");
@@ -250,7 +248,7 @@ void processState() {
     Serial.println(">");
   } else {
     //Serial.print("<fail>");
-    Serial.println(1);
+    Serial.println("x");
   }
 }
 
@@ -351,21 +349,23 @@ void processLife(char * strtokIndex) {
   wVal2 = wVal;
   lifePaused = 0;
 
-  // Get the next part, which should be Red value.
+  // Get the next part, which should be Hue value.
   strtokIndex = strtok(NULL, ",");
-  rVal = atoi(strtokIndex);
+  hVal = atoi(strtokIndex);
 
-  // Get next part, which should be Green value.
+  // Get next part, which should be Saturation value.
   strtokIndex = strtok(NULL, ",");
-  gVal = atoi(strtokIndex);
+  sVal = atoi(strtokIndex);
 
-  // Get next part, which should be Blue value.
+  // Get next part, which should be Lightness value.
   strtokIndex = strtok(NULL, ",");
-  bVal = atoi(strtokIndex);
+  lVal = atoi(strtokIndex);
 
-  // Get next part, which should be White value.
-  strtokIndex = strtok(NULL, ",");
-  wVal = atoi(strtokIndex);
+  uint32_t color = hsl2rgb(hVal, sVal, lVal);
+  rVal = red(color);
+  gVal = green(color);
+  bVal = blue(color);
+  wVal = 0;
 }
 
 void processLifePause(char * strtokIndex) {

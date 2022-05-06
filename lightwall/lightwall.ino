@@ -737,9 +737,18 @@ void lifeStart() {
         }
       }
     }
-    // Extinction, prepare for a reset.
+    // Extinction, prepare for a reset and hue shift.
     if ( currentLifeCount == 0 ) {
       lifeInitialized = false;
+      hVal++;
+      if (hVal == 360) {
+        hVal = 0;
+      }
+      uint32_t newColor = hsl2rgb(hVal, 100, 10);
+      rVal = red(newColor);
+      gVal = green(newColor);
+      bVal = blue(newColor);
+      wVal = 0;
     }
   }
 

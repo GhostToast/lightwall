@@ -41,10 +41,10 @@ uint8_t maxHeight = 32;
 cell allCells[56][32]; // Array to hold all "cell" structs.
 byte lifeInitialized = 0;
 byte lifePaused = 0;
-uint32_t lifeSpeed = 250;
+uint16_t lifeSpeed = 370;
 byte lifeFadeSteps = 16;
 byte lifeFadeIndex = 0;
-uint16_t lifeFadeInterval = 10;
+uint8_t lifeFadeInterval = 16;
 byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
@@ -706,6 +706,7 @@ void lifeStart() {
   uint8_t gTemp = 0;
   uint8_t bTemp = 0;
   uint8_t wTemp = 0;
+  uint16_t currentLifeCount = 0;
 
   // Update next generation.
   if ( currentTime - lifeLastTime >= lifeSpeed ) {
@@ -720,18 +721,25 @@ void lifeStart() {
           allCells[w][h].nextColor = 0;
         } else if ( allCells[w][h].currentColor && ( neighborCount == 2 || neighborCount == 3 ) ) {
           // Cell continues living if 2 or 3 neighbors.
+          currentLifeCount++;
           allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
         } else if ( allCells[w][h].currentColor && allCells[w][h].currentColor && neighborCount > 3 ) {
-          // Cell dies is more than 3 neighbors.
+          // Cell dies if more than 3 neighbors.
           allCells[w][h].nextColor = 0;
         } else if ( ! allCells[w][h].currentColor && neighborCount == 3 ) { // 3 || 6 = high life.
           // New life spawns if exactly 3 neighbors.
+          currentLifeCount++;
           allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
         } else if ( ! allCells[w][h].currentColor && neighborCount > 0 && ( random(1, 101) > 99 ) ) {
           // Chance of spontaneous life to keep from going stagnant.
+          currentLifeCount++;
           allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
         }
       }
+    }
+    // Extinction, prepare for a reset.
+    if ( currentLifeCount == 0 ) {
+      lifeInitialized = false;
     }
   }
 

@@ -41,6 +41,7 @@ uint8_t maxHeight = 32;
 cell allCells[56][32]; // Array to hold all "cell" structs.
 byte lifeInitialized = 0;
 byte lifePaused = 0;
+byte lifeNewColor = 0;
 uint16_t lifeSpeed = 370;
 byte lifeFadeSteps = 16;
 byte lifeFadeIndex = 0;
@@ -346,8 +347,8 @@ void processLife(char * strtokIndex) {
   rVal2 = rVal;
   gVal2 = gVal;
   bVal2 = bVal;
-  wVal2 = wVal;
   lifePaused = 0;
+  lifeNewColor = 1;
 
   // Get the next part, which should be Hue value.
   strtokIndex = strtok(NULL, ",");
@@ -694,6 +695,16 @@ void lifeStart() {
       }
     }
     lifeInitialized = true;
+  } else if ( lifeNewColor ) {
+    // Set new color immediately.
+    for ( byte w = 0; w < maxWidth; w++) {
+      for ( byte h = 0; h < maxHeight; h++) {
+        if ( allCells[w][h].currentColor ) {
+          allCells[w][h].hVal = hVal;
+        }
+      }
+    }
+    lifeNewColor = 0;
   }
 
   uint8_t neighborCount = 0;

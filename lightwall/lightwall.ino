@@ -700,7 +700,6 @@ void lifeStart() {
   uint8_t rTemp = 0;
   uint8_t gTemp = 0;
   uint8_t bTemp = 0;
-  uint8_t wTemp = 0;
   uint16_t currentLifeCount = 0;
 
   // Update next generation.
@@ -722,21 +721,20 @@ void lifeStart() {
           // Cell dies if more than 3 neighbors.
           allCells[w][h].nextColor = 0;
         } else if ( ! allCells[w][h].currentColor && neighborCount == 3 ) { // 3 || 6 = high life.
-          // New life spawns if exactly 3 neighbors. Color created in getNeighborCount.
+          // New life spawns if exactly 3 neighbors.
           currentLifeCount++;
+          allCells[w][h].nextColor = hsl2rgb(allCells[w][h].hVal, sVal, lVal);
         } else if ( ! allCells[w][h].currentColor && neighborCount > 0 && ( random(1, 101) > 99 ) ) {
-          // Chance of spontaneous life to keep from going stagnant. Color created in getNeighborCount.
+          // Chance of spontaneous life to keep from going stagnant.
           currentLifeCount++;
+          allCells[w][h].nextColor = hsl2rgb(allCells[w][h].hVal, sVal, lVal);
         }
       }
     }
     // Extinction, prepare for a reset and hue shift.
     if ( currentLifeCount == 0 ) {
       lifeInitialized = false;
-      hVal++;
-      if (hVal == 360) {
-        hVal = 0;
-      }
+      hVal = fmod(hVal++, 360);
     }
   }
 
@@ -745,14 +743,13 @@ void lifeStart() {
     globalLastTime = currentTime;
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
-        if ( allCells[w][h].currentColor && !allCells[w][h].nextColor ) {
-          // It's dying, fade out.
+        if ( !allCells[w][h].currentColor || !allCells[w][h].nextColor ) {
+          // Transition to/from life colors.
           rTemp = ((red(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (red(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           gTemp = ((green(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (green(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           bTemp = ((blue(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (blue(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
-          wTemp = ((white(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (white(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           
-          leds.setPixel( remapXY(w, h), makeColor( rTemp, gTemp, bTemp, wTemp ) );
+          leds.setPixel( remapXY(w, h), makeColor( rTemp, gTemp, bTemp ) );
         }
       }
     }
@@ -839,29 +836,18 @@ uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
 
   // If this cell has chance to be born, calculate it's color based on blend of two "parents".
   if ( count > 0 ) {
-    byte parent1 = random(0,count);
-    byte parent2 = random(0,count);
-
-    if ( parent1 == parent2) {
-      parent2 = parent1 % count;
-    }
-
-    uint8_t geneIndex = random(0,17);
+    byte parentIndex = random(0,count);
+    uint8_t geneIndex = random(0,4);
     byte geneDirection = random(0,2);
     uint16_t tempHVal = 0;
 
-    // hval is 0-359. color wheel.
     if ( geneDirection ) {
-      tempHVal = round(parents[parent1] + parents[parent2] + geneIndex / 2);
+      tempHVal = fmod(parents[parentIndex] + geneIndex,360);
     } else {
-      tempHVal = round(parents[parent1] + parents[parent2] - geneIndex / 2);
+      tempHVal = fmod(parents[parentIndex] - geneIndex,360);
     }
     
-    if (tempHVal > 359 || 0 > tempHVal) {
-      tempHVal = abs(tempHVal % 360);
-    }
     allCells[x][y].hVal = tempHVal;
-    allCells[x][y].nextColor = hsl2rgb(tempHVal, sVal, lVal);
   }
 
   return count;

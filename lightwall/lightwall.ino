@@ -848,8 +848,8 @@ uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
   // If this cell has chance to be born, calculate it's color based on blend of two "parents".
   if ( count > 0 ) {
     byte parentIndex = random(0,count);
-    uint8_t geneIndex = random(0,4);
-    byte geneDirection = random(0,2);
+    uint8_t geneIndex = random(1,2);
+    byte geneDirection = random(0,1);
     uint16_t tempHVal = 0;
 
     if ( geneDirection ) {

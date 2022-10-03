@@ -41,6 +41,7 @@ uint8_t maxHeight = 32;
 cell allCells[56][32]; // Array to hold all "cell" structs.
 byte lifeInitialized = 0;
 byte lifePaused = 0;
+byte lifeNewColor = 0;
 uint16_t lifeSpeed = 370;
 byte lifeFadeSteps = 16;
 byte lifeFadeIndex = 0;
@@ -236,13 +237,11 @@ void processState() {
     Serial.println(">");
   } else if (10 == userMode){
     Serial.print("<life,");
-    Serial.print(rVal);
+    Serial.print(hVal);
     Serial.print(",");
-    Serial.print(gVal);
+    Serial.print(sVal);
     Serial.print(",");
-    Serial.print(bVal);
-    Serial.print(",");
-    Serial.print(wVal);
+    Serial.print(lVal);
     Serial.println(">");
   } else if (11 == userMode) {
     Serial.print("<lifepause,");
@@ -250,7 +249,7 @@ void processState() {
     Serial.println(">");
   } else {
     //Serial.print("<fail>");
-    Serial.println(1);
+    Serial.println("x");
   }
 }
 
@@ -348,24 +347,20 @@ void processLife(char * strtokIndex) {
   rVal2 = rVal;
   gVal2 = gVal;
   bVal2 = bVal;
-  wVal2 = wVal;
   lifePaused = 0;
+  lifeNewColor = 1;
 
-  // Get the next part, which should be Red value.
+  // Get the next part, which should be Hue value.
   strtokIndex = strtok(NULL, ",");
-  rVal = atoi(strtokIndex);
+  hVal = atoi(strtokIndex);
 
-  // Get next part, which should be Green value.
+  // Get next part, which should be Saturation value.
   strtokIndex = strtok(NULL, ",");
-  gVal = atoi(strtokIndex);
+  sVal = atoi(strtokIndex);
 
-  // Get next part, which should be Blue value.
+  // Get next part, which should be Lightness value.
   strtokIndex = strtok(NULL, ",");
-  bVal = atoi(strtokIndex);
-
-  // Get next part, which should be White value.
-  strtokIndex = strtok(NULL, ",");
-  wVal = atoi(strtokIndex);
+  lVal = atoi(strtokIndex);
 }
 
 void processLifePause(char * strtokIndex) {
@@ -689,23 +684,33 @@ void lifeStart() {
     lifeFadeIndex = 0;
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
+        allCells[w][h].hVal = hVal;
 
         // Populate life randomly to 20% of board.
         if ( random(1,101) > 80 ) {
-          allCells[w][h].currentColor = makeColor(rVal, gVal, bVal, wVal);
-          allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
-          leds.setPixel( remapXY(w, h), makeColor(rVal, gVal, bVal, wVal) );
+          allCells[w][h].currentColor = hsl2rgb(hVal, sVal, lVal);
+          allCells[w][h].nextColor = hsl2rgb(hVal, sVal, lVal);
+          leds.setPixel( remapXY(w, h), hsl2rgb(hVal, sVal, lVal) );
         }
       }
     }
     lifeInitialized = true;
+  } else if ( lifeNewColor ) {
+    // Set new color immediately.
+    for ( byte w = 0; w < maxWidth; w++) {
+      for ( byte h = 0; h < maxHeight; h++) {
+        if ( allCells[w][h].currentColor ) {
+          allCells[w][h].hVal = hVal;
+        }
+      }
+    }
+    lifeNewColor = 0;
   }
 
   uint8_t neighborCount = 0;
   uint8_t rTemp = 0;
   uint8_t gTemp = 0;
   uint8_t bTemp = 0;
-  uint8_t wTemp = 0;
   uint16_t currentLifeCount = 0;
 
   // Update next generation.
@@ -720,35 +725,27 @@ void lifeStart() {
           // Cell dies with less than 2 neighbors.
           allCells[w][h].nextColor = 0;
         } else if ( allCells[w][h].currentColor && ( neighborCount == 2 || neighborCount == 3 ) ) {
-          // Cell continues living if 2 or 3 neighbors.
+          // Cell continues living if 2 or 3 neighbors. Keep same color (no mutation).
+          allCells[w][h].nextColor = allCells[w][h].currentColor;
           currentLifeCount++;
-          allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
         } else if ( allCells[w][h].currentColor && allCells[w][h].currentColor && neighborCount > 3 ) {
           // Cell dies if more than 3 neighbors.
           allCells[w][h].nextColor = 0;
         } else if ( ! allCells[w][h].currentColor && neighborCount == 3 ) { // 3 || 6 = high life.
           // New life spawns if exactly 3 neighbors.
           currentLifeCount++;
-          allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
+          allCells[w][h].nextColor = hsl2rgb(allCells[w][h].hVal, sVal, lVal);
         } else if ( ! allCells[w][h].currentColor && neighborCount > 0 && ( random(1, 101) > 99 ) ) {
           // Chance of spontaneous life to keep from going stagnant.
           currentLifeCount++;
-          allCells[w][h].nextColor = makeColor(rVal, gVal, bVal, wVal);
+          allCells[w][h].nextColor = hsl2rgb(allCells[w][h].hVal, sVal, lVal);
         }
       }
     }
     // Extinction, prepare for a reset and hue shift.
     if ( currentLifeCount == 0 ) {
       lifeInitialized = false;
-      hVal++;
-      if (hVal == 360) {
-        hVal = 0;
-      }
-      uint32_t newColor = hsl2rgb(hVal, 100, 10);
-      rVal = red(newColor);
-      gVal = green(newColor);
-      bVal = blue(newColor);
-      wVal = 0;
+      hVal = fmod(hVal++, 360);
     }
   }
 
@@ -757,14 +754,13 @@ void lifeStart() {
     globalLastTime = currentTime;
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
-        if ( allCells[w][h].currentColor != allCells[w][h].nextColor ) {
-          // It's dying, fade out.
+        if ( !allCells[w][h].currentColor || !allCells[w][h].nextColor ) {
+          // Transition to/from life colors.
           rTemp = ((red(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (red(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           gTemp = ((green(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (green(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           bTemp = ((blue(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (blue(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
-          wTemp = ((white(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (white(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           
-          leds.setPixel( remapXY(w, h), makeColor( rTemp, gTemp, bTemp, wTemp ) );
+          leds.setPixel( remapXY(w, h), makeColor( rTemp, gTemp, bTemp ) );
         }
       }
     }
@@ -799,45 +795,70 @@ uint8_t right( uint8_t x ) {
 
 uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
   uint8_t count = 0;
+  uint16_t parents[8];
 
   // Check cell above.
   if ( allCells[ x ][ above(y) ].currentColor ) {
     count++;
+    parents[0] = allCells[ x ][ above(y) ].hVal;
   }
 
   // Check cell upper right.
   if ( allCells[ right(x) ][ above(y) ].currentColor ) {
     count++;
+    parents[1] = allCells[ right(x) ][ above(y) ].hVal;
   }
 
   // Check cell on right.
   if ( allCells[ right(x) ][ y ].currentColor ) {
     count++;
+    parents[2] = allCells[ right(x) ][ y ].hVal;
   }
 
   // Check cell lower right.
   if ( allCells[ right(x) ][ below(y) ].currentColor ) {
     count++;
+    parents[3] = allCells[ right(x) ][ below(y) ].hVal;
   }
 
   // Check cell below.
   if ( allCells[ x ][ below(y) ].currentColor ) {
     count++;
+    parents[4] = allCells[ x ][ below(y) ].hVal;
   }
 
   // Check cell lower left.
   if ( allCells[ left(x) ][ below(y) ].currentColor ) {
     count++;
+    parents[5] = allCells[ left(x) ][ below(y) ].hVal;
   }
 
   // Check cell on left.
   if ( allCells[ left(x) ][ y ].currentColor ) {
     count++;
+    parents[6] = allCells[ left(x) ][ y ].hVal;
   }
 
   // Check cell upper left.
   if ( allCells[ left(x) ][ above(y) ].currentColor ) {
     count++;
+    parents[7] = allCells[ left(x) ][ above(y) ].hVal;
+  }
+
+  // If this cell has chance to be born, calculate it's color based on blend of two "parents".
+  if ( count > 0 ) {
+    byte parentIndex = random(0,count-1);
+    uint8_t geneIndex = random(0,2);
+    byte geneDirection = random(1,100);
+    uint16_t tempHVal = 0;
+
+    if ( geneDirection % 2) { // Even or odd
+      tempHVal = fmod(parents[parentIndex] + geneIndex,360);
+    } else {
+      tempHVal = fmod(parents[parentIndex] - geneIndex,360);
+    }
+    
+    allCells[x][y].hVal = tempHVal;
   }
 
   return count;

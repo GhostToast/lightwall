@@ -26,19 +26,19 @@ const uint8_t perimeter[30] = {
 };
 
 /**
-   The entire grid, including fake panels (denoated with -1).
+   The entire grid.
 */
-const int grid[4][7] = {
-  { 0,  -1,   4,  -1,   8,  -1,  12},
-  {-1,   2,  -1,   6,  -1,  10,  -1},
-  { 1,  -1,   5,  -1,   9,  -1,  13},
-  {-1,   3,  -1,   7,  -1,  11,  -1}
+const int grid[4][4] = {
+  {  0,  1,  2,  3, },
+  {  4,  5,  6,  7, },
+  {  8,  9, 10, 11, },
+  { 12, 13, 14, 15  }
 };
 
-rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
-uint8_t maxWidth = 56;
+rainColumn allRainColumns[32]; // Array to hold all rainColumn structs.
+uint8_t maxWidth = 32;
 uint8_t maxHeight = 32;
-cell allCells[56][32]; // Array to hold all "cell" structs.
+cell allCells[32][32]; // Array to hold all "cell" structs.
 byte lifeInitialized = 0;
 byte lifePaused = 0;
 byte lifeNewColor = 0;
@@ -49,7 +49,7 @@ uint8_t lifeFadeInterval = 16;
 byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
-uint8_t fireBuffer[56][32];
+uint8_t fireBuffer[32][32];
 uint32_t firePalette[256];
 uint16_t fireHueShift = 0;
 byte specialFire = 0;
@@ -89,7 +89,7 @@ byte sVal = 0;
 byte lVal = 0;
 
 const int ledsPerStrip = 128;
-#define NUM_LEDS 896
+#define NUM_LEDS 1024
 #define BRIGHTNESS 50
 DMAMEM int displayMemory[ledsPerStrip * 8];
 int drawingMemory[ledsPerStrip * 8];

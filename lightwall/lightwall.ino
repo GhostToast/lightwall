@@ -525,6 +525,13 @@ uint16_t remapXY(uint8_t x, uint8_t y) {
   if ( x >= maxWidth || y >= maxHeight || x < 0 || y < 0 ) {
     return -1;
   }
+
+  // Handle the 180-degree physical flip of the left-side panels
+  if (x < 16) {
+    x = 15 - x;
+    y = 7 - (y % 8) + ((y / 8) * 8);
+  }
+  
   uint16_t pixelBlock = grid[y / 8][x / 8];
   if (-1 == pixelBlock) {
     return -1;
@@ -588,7 +595,7 @@ void perimeterColor(uint32_t color, uint32_t fadeColor = -1) {
       fadeIndex++;
   }
   // For each panel.
-  for (uint8_t panel = 0; panel < 14; panel++) {
+  for (uint8_t panel = 0; panel < 16; panel++) {
     // For each pixel within the perimeter.
     for (uint8_t pixel = 0; pixel < 30; pixel++) {
       leds.setPixel(panel * 64 + perimeter[pixel], color);

@@ -26,19 +26,19 @@ const uint8_t perimeter[30] = {
 };
 
 /**
-   The entire grid, including fake panels (denoated with -1).
+   The entire grid.
 */
-const int grid[4][7] = {
-  { 0,  -1,   4,  -1,   8,  -1,  12},
-  {-1,   2,  -1,   6,  -1,  10,  -1},
-  { 1,  -1,   5,  -1,   9,  -1,  13},
-  {-1,   3,  -1,   7,  -1,  11,  -1}
+const int grid[4][4] = {
+  {  0,  1,  2,  3, },
+  {  4,  5,  6,  7, },
+  {  8,  9, 10, 11, },
+  { 12, 13, 14, 15  }
 };
 
-rainColumn allRainColumns[56]; // Array to hold all rainColumn structs.
-uint8_t maxWidth = 56;
-uint8_t maxHeight = 32;
-cell allCells[56][32]; // Array to hold all "cell" structs.
+rainColumn allRainColumns[32]; // Array to hold all rainColumn structs.
+uint8_t maxWidth = 38; // 32 + gaps
+uint8_t maxHeight = 41; // 32 + gaps
+cell allCells[38][41];  // Array to hold all "cell" structs.
 byte lifeInitialized = 0;
 byte lifePaused = 0;
 byte lifeNewColor = 0;
@@ -49,7 +49,7 @@ uint8_t lifeFadeInterval = 16;
 byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
-uint8_t fireBuffer[56][32];
+uint8_t fireBuffer[38][41];
 uint32_t firePalette[256];
 uint16_t fireHueShift = 0;
 byte specialFire = 0;
@@ -89,7 +89,7 @@ byte sVal = 0;
 byte lVal = 0;
 
 const int ledsPerStrip = 128;
-#define NUM_LEDS 896
+#define NUM_LEDS 1024
 #define BRIGHTNESS 50
 DMAMEM int displayMemory[ledsPerStrip * 8];
 int drawingMemory[ledsPerStrip * 8];
@@ -522,14 +522,21 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
 
 // Remap coordinates to an actual pixel number. Or a non-existent one.
 uint16_t remapXY(uint8_t x, uint8_t y) {
-  if ( x >= maxWidth || y >= maxHeight || x < 0 || y < 0 ) {
-    return -1;
-  }
-  uint16_t pixelBlock = grid[y / 8][x / 8];
-  if (-1 == pixelBlock) {
-    return -1;
-  }
-  return innerRemapXY(x, y, pixelBlock);
+  // Boundary defense and gap handling to map 38x41 to physical 32x32
+  if (x >= maxWidth || y >= maxHeight || x < 0 || y < 0) return -1;
+  // Gap detection (8-9, 18-19, 28-29 for X; 8-10, 19-21, 30-32 for Y)
+  if (x == 8 || x == 9 || x == 18 || x == 19 || x == 28 || x == 29) return -1;
+  if ((y >= 8 && y <= 10) || (y >= 19 && y <= 21) || (y >= 30 && y <= 32)) return -1;
+
+  // Normalize, handle 180-degree flip for left panels, and lookup grid
+  uint8_t rx = x;
+  if (rx > 29) rx -= 6; else if (rx > 19) rx -= 4; else if (rx > 9) rx -= 2;
+  uint8_t ry = y;
+  if (ry > 32) ry -= 9; else if (ry > 21) ry -= 6; else if (ry > 10) ry -= 3;
+  if (rx < 16) { rx = 15 - rx; ry = 7 - (ry % 8) + ((ry / 8) * 8); }
+  
+  uint16_t pixelBlock = grid[ry / 8][rx / 8];
+  return (-1 == pixelBlock) ? -1 : innerRemapXY(rx, ry, pixelBlock);
 }
 
 // Remap coordinates to an actual pixel number within a panel.
@@ -588,7 +595,7 @@ void perimeterColor(uint32_t color, uint32_t fadeColor = -1) {
       fadeIndex++;
   }
   // For each panel.
-  for (uint8_t panel = 0; panel < 14; panel++) {
+  for (uint8_t panel = 0; panel < 16; panel++) {
     // For each pixel within the perimeter.
     for (uint8_t pixel = 0; pixel < 30; pixel++) {
       leds.setPixel(panel * 64 + perimeter[pixel], color);
@@ -684,6 +691,7 @@ void lifeStart() {
     lifeFadeIndex = 0;
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
+        if (remapXY(w, h) == -1) continue; // Ignore gaps
         allCells[w][h].hVal = hVal;
 
         // Populate life randomly to 20% of board.
@@ -781,16 +789,39 @@ void lifeStart() {
 }
 
 uint8_t above( uint8_t y ) {
-  return ( ( y + maxHeight - 1 ) % maxHeight );
+  uint8_t targetY = (y + maxHeight - 1) % maxHeight;
+  // If target hits a horizontal gap, keep going up
+  while ((targetY >= 8 && targetY <= 10) || (targetY >= 19 && targetY <= 21) || (targetY >= 30 && targetY <= 32)) {
+    targetY = (targetY + maxHeight - 1) % maxHeight;
+  }
+  return targetY;
 }
+
 uint8_t below( uint8_t y ) {
-  return ( ( y + maxHeight + 1 ) % maxHeight );
+  uint8_t targetY = (y + 1) % maxHeight;
+  // If target hits a horizontal gap, keep going down
+  while ((targetY >= 8 && targetY <= 10) || (targetY >= 19 && targetY <= 21) || (targetY >= 30 && targetY <= 32)) {
+    targetY = (targetY + 1) % maxHeight;
+  }
+  return targetY;
 }
+
 uint8_t left( uint8_t x ) {
-  return ( ( x + maxWidth - 1 ) % maxWidth );
+  uint8_t targetX = (x + maxWidth - 1) % maxWidth;
+  // If target hits a vertical gap, keep going left
+  while (targetX == 8 || targetX == 9 || targetX == 18 || targetX == 19 || targetX == 28 || targetX == 29) {
+    targetX = (targetX + maxWidth - 1) % maxWidth;
+  }
+  return targetX;
 }
+
 uint8_t right( uint8_t x ) {
-  return ( ( x + maxWidth + 1 ) % maxWidth );
+  uint8_t targetX = (x + 1) % maxWidth;
+  // If target hits a vertical gap, keep going right
+  while (targetX == 8 || targetX == 9 || targetX == 18 || targetX == 19 || targetX == 28 || targetX == 29) {
+    targetX = (targetX + 1) % maxWidth;
+  }
+  return targetX;
 }
 
 uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
@@ -878,6 +909,7 @@ void fireStarter() {
     // Set buffers to 0.
     for (uint8_t y = 0; y < maxHeight; y++) {
       for (uint8_t x = 0; x < maxWidth; x++) {
+        if (remapXY(x, y) == -1) continue; // Skip gaps
         fireBuffer[x][y] = 0;
       }
     }

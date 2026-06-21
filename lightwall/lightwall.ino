@@ -35,7 +35,7 @@ const int grid[4][4] = {
   { 12, 13, 14, 15  }
 };
 
-rainColumn allRainColumns[32]; // Array to hold all rainColumn structs.
+rainColumn allRainColumns[38]; // Array to hold all rainColumn structs.
 uint8_t maxWidth = 38; // 32 + gaps
 uint8_t maxHeight = 41; // 32 + gaps
 cell allCells[38][41];  // Array to hold all "cell" structs.

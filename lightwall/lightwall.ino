@@ -893,41 +893,18 @@ void lifeStart() {
   leds.show();
 }
 
-uint8_t above( uint8_t y ) {
-  uint8_t targetY = (y + maxHeight - 1) % maxHeight;
-  // If target hits a horizontal gap, keep going up
-  while ((targetY >= 8 && targetY <= 10) || (targetY >= 19 && targetY <= 21) || (targetY >= 30 && targetY <= 32)) {
-    targetY = (targetY + maxHeight - 1) % maxHeight;
-  }
-  return targetY;
-}
+// Neighbor lookups treat the full 38x41 array as one continuous logical grid.
+// Gap cells (the wood struts between panes) are ordinary Life cells that compute
+// and hold state -- they are simply not displayed (see remapXY). This lets a
+// pattern traverse "behind" a strut, taking a few generations to cross the hidden
+// band before re-emerging on the next pane, while computation continues off-camera.
+uint8_t above( uint8_t y ) { return (y + maxHeight - 1) % maxHeight; }
 
-uint8_t below( uint8_t y ) {
-  uint8_t targetY = (y + 1) % maxHeight;
-  // If target hits a horizontal gap, keep going down
-  while ((targetY >= 8 && targetY <= 10) || (targetY >= 19 && targetY <= 21) || (targetY >= 30 && targetY <= 32)) {
-    targetY = (targetY + 1) % maxHeight;
-  }
-  return targetY;
-}
+uint8_t below( uint8_t y ) { return (y + 1) % maxHeight; }
 
-uint8_t left( uint8_t x ) {
-  uint8_t targetX = (x + maxWidth - 1) % maxWidth;
-  // If target hits a vertical gap, keep going left
-  while (targetX == 8 || targetX == 9 || targetX == 18 || targetX == 19 || targetX == 28 || targetX == 29) {
-    targetX = (targetX + maxWidth - 1) % maxWidth;
-  }
-  return targetX;
-}
+uint8_t left( uint8_t x ) { return (x + maxWidth - 1) % maxWidth; }
 
-uint8_t right( uint8_t x ) {
-  uint8_t targetX = (x + 1) % maxWidth;
-  // If target hits a vertical gap, keep going right
-  while (targetX == 8 || targetX == 9 || targetX == 18 || targetX == 19 || targetX == 28 || targetX == 29) {
-    targetX = (targetX + 1) % maxWidth;
-  }
-  return targetX;
-}
+uint8_t right( uint8_t x ) { return (x + 1) % maxWidth; }
 
 uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
   uint8_t count = 0;

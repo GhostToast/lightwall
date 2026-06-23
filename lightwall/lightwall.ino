@@ -509,7 +509,7 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
       if ( -1 != oldPixel ) {
         uint32_t oldPixelColor = leds.getPixel(oldPixel);
         if ( 0 != oldPixelColor ) {
-          leds.setPixel(oldPixel, dimColor(leds.getPixel(oldPixel), rainColumn.dimAmount, rainColumn.canGoBlack));
+          leds.setPixel(oldPixel, fadeTailColor(leds.getPixel(oldPixel), rainColumn.color, rainColumn.dimAmount, rainColumn.canGoBlack));
         }
       }
     }
@@ -545,6 +545,66 @@ uint16_t remapXY(uint8_t x, uint8_t y) {
 // Remap coordinates to an actual pixel number within a panel.
 uint16_t innerRemapXY(uint8_t x, uint8_t y, uint16_t pixelBlock) {
   return pixelBlock * 64 + block[y % 8][x % 8];
+}
+
+// Fade a matrix streamer tail pixel while preserving its hue.
+//
+// Unlike dimColor() (which subtracts a fixed amount from each channel
+// independently and is used by the fire pattern for single-pass flicker), this
+// fades by stepping the brightest channel down and scaling the other channels
+// to match. Holding the channel ratios fixed keeps the color correct -- amber
+// (high R + mid G) fades as amber instead of collapsing toward its dominant
+// primary -- while the constant step reproduces the original linear fade
+// timing, so the tail leaves the scene on the same schedule as before.
+//
+// To smooth the most visible part of the fade, the step eases out near the
+// bottom: above EASE_KNEE it is the full dimAmount, below it shrinks with
+// brightness (floored at 1) so the last few levels glide to black instead of
+// popping out. The eye is logarithmic, so a constant step looks harsh only
+// down here at the low end.
+//
+// canGoBlack controls where the fade settles:
+//   true  -> the column fades all the way to true black.
+//   false -> the column holds a faint, hue-correct ember (~1/8 of its true
+//            color, from baseColor) so the trail stays softly lit.
+uint32_t fadeTailColor(uint32_t color, uint32_t baseColor, byte dimAmount, bool canGoBlack) {
+  uint8_t r1 = red(color);
+  uint8_t g1 = green(color);
+  uint8_t b1 = blue(color);
+  uint8_t w1 = white(color);
+
+  uint8_t m1 = max( max(r1, g1), max(b1, w1) );
+  if ( m1 == 0 ) return 0;
+
+  const uint8_t EASE_KNEE = 24;
+  uint8_t step = dimAmount;
+  if ( m1 < EASE_KNEE ) {
+    step = (uint8_t)( (uint16_t)m1 * dimAmount / EASE_KNEE );
+    if ( step < 1 ) step = 1;
+  }
+
+  uint8_t m2 = (m1 > step) ? (m1 - step) : 0;
+
+  // Scale every channel by m2/m1 to preserve hue.
+  uint8_t r2 = (uint16_t)r1 * m2 / m1;
+  uint8_t g2 = (uint16_t)g1 * m2 / m1;
+  uint8_t b2 = (uint16_t)b1 * m2 / m1;
+  uint8_t w2 = (uint16_t)w1 * m2 / m1;
+
+  if ( ! canGoBlack ) {
+    // Floor at a uniform fraction of the streamer's true color. Using the same
+    // fraction for every channel keeps the ember the correct hue.
+    uint8_t rf = red(baseColor)   >> 3;
+    uint8_t gf = green(baseColor) >> 3;
+    uint8_t bf = blue(baseColor)  >> 3;
+    uint8_t wf = white(baseColor) >> 3;
+    if (r2 < rf) r2 = rf;
+    if (g2 < gf) g2 = gf;
+    if (b2 < bf) b2 = bf;
+    if (w2 < wf) w2 = wf;
+  }
+
+  return makeColor(r2, g2, b2, w2);
 }
 
 // Calculate diminishing version of a color.

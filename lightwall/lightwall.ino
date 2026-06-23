@@ -471,7 +471,7 @@ void rainOneColumn( rainColumn &rainColumn ) {
     }
 
     // Draw further down than our canvas so things don't end abruptly.
-    if ( rainColumn.head > maxHeight + (rainColumn.height * 3) ) {
+    if ( rainColumn.head > maxHeight + (rainColumn.height * 4) ) {
 
       // Inform that the animation has terminated, and set lastCompleted time.
       rainColumn.isRunning = 0;

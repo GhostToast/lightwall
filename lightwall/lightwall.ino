@@ -181,7 +181,7 @@ void parseData() {
 }
 
 void processState() {
-  if (1 == userMode){
+  if (1 == userMode) {
     Serial.print("<rgbw,");
     Serial.print(rVal);
     Serial.print(",");
@@ -235,7 +235,7 @@ void processState() {
     Serial.print("<specialfire,");
     Serial.print(specialFire);
     Serial.println(">");
-  } else if (10 == userMode){
+  } else if (10 == userMode) {
     Serial.print("<life,");
     Serial.print(hVal);
     Serial.print(",");
@@ -336,7 +336,7 @@ void processMatrix(char * strtokIndex) {
   matrixPaused = 0;
   // Fill up matrix colors.
   for (byte i = 0; i < 4; i++) {
-    for (byte z = 0; z <2; z++) {
+    for (byte z = 0; z < 2; z++) {
       strtokIndex = strtok(NULL, ",");
       matrixColors[i][z] = atoi(strtokIndex);
     }
@@ -449,12 +449,12 @@ void assignColumnProperties( rainColumn &rainColumn ) {
   rainColumn.dimAmount = random(2, 8);
 
   rainColumn.color = makeColor(
-    random(matrixColors[0][0], matrixColors[0][1]),
-    random(matrixColors[1][0], matrixColors[1][1]),
-    random(matrixColors[2][0], matrixColors[2][1]),
-    random(matrixColors[3][0], matrixColors[3][1]),
-    BRIGHTNESS
-  );
+                       random(matrixColors[0][0], matrixColors[0][1]),
+                       random(matrixColors[1][0], matrixColors[1][1]),
+                       random(matrixColors[2][0], matrixColors[2][1]),
+                       random(matrixColors[3][0], matrixColors[3][1]),
+                       BRIGHTNESS
+                     );
 
   rainColumn.interval = random(25, 115);
   rainColumn.sleepTime = random(1000, 3000);
@@ -533,8 +533,11 @@ uint16_t remapXY(uint8_t x, uint8_t y) {
   if (rx > 29) rx -= 6; else if (rx > 19) rx -= 4; else if (rx > 9) rx -= 2;
   uint8_t ry = y;
   if (ry > 32) ry -= 9; else if (ry > 21) ry -= 6; else if (ry > 10) ry -= 3;
-  if (rx < 16) { rx = 15 - rx; ry = 7 - (ry % 8) + ((ry / 8) * 8); }
-  
+  if (rx < 16) {
+    rx = 15 - rx;
+    ry = 7 - (ry % 8) + ((ry / 8) * 8);
+  }
+
   uint16_t pixelBlock = grid[ry / 8][rx / 8];
   return (-1 == pixelBlock) ? -1 : innerRemapXY(rx, ry, pixelBlock);
 }
@@ -587,12 +590,12 @@ uint32_t lightenColor(uint32_t color, byte whiteAmount) {
 // Instructs all panels to display a color around just the perimeter.
 void perimeterColor(uint32_t color, uint32_t fadeColor = -1) {
   if (fadeColor >= 0 && color != fadeColor && fadeIndex <= fadeSteps) {
-      uint8_t r = ((red(fadeColor) * (fadeSteps - fadeIndex)) + (red(color) * fadeIndex)) / fadeSteps;
-      uint8_t g = ((green(fadeColor) * (fadeSteps - fadeIndex)) + (green(color) * fadeIndex)) / fadeSteps;
-      uint8_t b = ((blue(fadeColor) * (fadeSteps - fadeIndex)) + (blue(color) * fadeIndex)) / fadeSteps;
-      uint8_t w = ((white(fadeColor) * (fadeSteps - fadeIndex)) + (white(color) * fadeIndex)) / fadeSteps;
-      color = makeColor( r, g, b, w );
-      fadeIndex++;
+    uint8_t r = ((red(fadeColor) * (fadeSteps - fadeIndex)) + (red(color) * fadeIndex)) / fadeSteps;
+    uint8_t g = ((green(fadeColor) * (fadeSteps - fadeIndex)) + (green(color) * fadeIndex)) / fadeSteps;
+    uint8_t b = ((blue(fadeColor) * (fadeSteps - fadeIndex)) + (blue(color) * fadeIndex)) / fadeSteps;
+    uint8_t w = ((white(fadeColor) * (fadeSteps - fadeIndex)) + (white(color) * fadeIndex)) / fadeSteps;
+    color = makeColor( r, g, b, w );
+    fadeIndex++;
   }
   // For each panel.
   for (uint8_t panel = 0; panel < 16; panel++) {
@@ -607,12 +610,12 @@ void perimeterColor(uint32_t color, uint32_t fadeColor = -1) {
 // Instructs all LED to display the same color, then renders.
 void oneColor(uint32_t color, uint32_t fadeColor = -1) {
   if (fadeColor >= 0 && color != fadeColor && fadeIndex <= fadeSteps) {
-      uint8_t r = ((red(fadeColor) * (fadeSteps - fadeIndex)) + (red(color) * fadeIndex)) / fadeSteps;
-      uint8_t g = ((green(fadeColor) * (fadeSteps - fadeIndex)) + (green(color) * fadeIndex)) / fadeSteps;
-      uint8_t b = ((blue(fadeColor) * (fadeSteps - fadeIndex)) + (blue(color) * fadeIndex)) / fadeSteps;
-      uint8_t w = ((white(fadeColor) * (fadeSteps - fadeIndex)) + (white(color) * fadeIndex)) / fadeSteps;
-      color = makeColor( r, g, b, w );
-      fadeIndex++;
+    uint8_t r = ((red(fadeColor) * (fadeSteps - fadeIndex)) + (red(color) * fadeIndex)) / fadeSteps;
+    uint8_t g = ((green(fadeColor) * (fadeSteps - fadeIndex)) + (green(color) * fadeIndex)) / fadeSteps;
+    uint8_t b = ((blue(fadeColor) * (fadeSteps - fadeIndex)) + (blue(color) * fadeIndex)) / fadeSteps;
+    uint8_t w = ((white(fadeColor) * (fadeSteps - fadeIndex)) + (white(color) * fadeIndex)) / fadeSteps;
+    color = makeColor( r, g, b, w );
+    fadeIndex++;
   }
   for (uint16_t i = 0; i < NUM_LEDS; i++) {
     leds.setPixel(i, color);
@@ -623,9 +626,9 @@ void oneColor(uint32_t color, uint32_t fadeColor = -1) {
 void doRGBW() {
   if (currentTime - globalLastTime >= fadeInterval) {
     globalLastTime = currentTime;
-    if (rgbwShape == 0){
+    if (rgbwShape == 0) {
       oneColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
-    } else if (rgbwShape == 1){
+    } else if (rgbwShape == 1) {
       perimeterColor( makeColor( rVal, gVal, bVal, wVal ), makeColor( rVal2, gVal2, bVal2, wVal2 ));
     }
   }
@@ -633,7 +636,7 @@ void doRGBW() {
 
 // Special HSL such as rainbow.+
 void doSpecialHSL() {
-  if (1==specialHSL) {
+  if (1 == specialHSL) {
     if (currentTime - globalLastTime >= fadeInterval) {
       globalLastTime = currentTime;
       if ( (currentTime - hslLastTime ) > hslInterval ) {
@@ -695,7 +698,7 @@ void lifeStart() {
         allCells[w][h].hVal = hVal;
 
         // Populate life randomly to 20% of board.
-        if ( random(1,101) > 80 ) {
+        if ( random(1, 101) > 80 ) {
           allCells[w][h].currentColor = hsl2rgb(hVal, sVal, lVal);
           allCells[w][h].nextColor = hsl2rgb(hVal, sVal, lVal);
           leds.setPixel( remapXY(w, h), hsl2rgb(hVal, sVal, lVal) );
@@ -767,7 +770,7 @@ void lifeStart() {
           rTemp = ((red(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (red(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           gTemp = ((green(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (green(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           bTemp = ((blue(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (blue(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
-          
+
           leds.setPixel( remapXY(w, h), makeColor( rTemp, gTemp, bTemp ) );
         }
       }
@@ -878,17 +881,17 @@ uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
 
   // If this cell has chance to be born, calculate it's color based on blend of two "parents".
   if ( count > 0 ) {
-    byte parentIndex = random(0,count-1);
-    uint8_t geneIndex = random(0,2);
-    byte geneDirection = random(1,100);
+    byte parentIndex = random(0, count - 1);
+    uint8_t geneIndex = random(0, 2);
+    byte geneDirection = random(1, 100);
     uint16_t tempHVal = 0;
 
     if ( geneDirection % 2) { // Even or odd
-      tempHVal = fmod(parents[parentIndex] + geneIndex,360);
+      tempHVal = fmod(parents[parentIndex] + geneIndex, 360);
     } else {
-      tempHVal = fmod(parents[parentIndex] - geneIndex,360);
+      tempHVal = fmod(parents[parentIndex] - geneIndex, 360);
     }
-    
+
     allCells[x][y].hVal = tempHVal;
   }
 
@@ -916,7 +919,7 @@ void fireStarter() {
     fireInitialized = true;
   }
 
-  if (1==specialFire) {
+  if (1 == specialFire) {
     globalLastTime = currentTime;
     if ( (currentTime - hslLastTime ) > hslInterval ) {
       hslLastTime = currentTime;
@@ -928,28 +931,28 @@ void fireStarter() {
   }
 
   // Generate palette.
-  for (uint16_t x = 0; x <256; x++) {
-    firePalette[x] = hsl2rgb((x/3.4)+fireHueShift, 100, min(50, x/4));
+  for (uint16_t x = 0; x < 256; x++) {
+    firePalette[x] = hsl2rgb((x / 3.4) + fireHueShift, 100, min(50, x / 4));
   }
 
 
   // Fill bottom row with random palette values.
   for (uint8_t x = 0; x < maxWidth; x++) {
-    if (! random(0,5)){
-      fireBuffer[x][maxHeight-1] = random(0, 255);
+    if (! random(0, 5)) {
+      fireBuffer[x][maxHeight - 1] = random(0, 255);
     }
   }
 
   // Fill the buffer with a palette color (0-255).
-  for (uint8_t y = 0; y < maxHeight-1; y++) {
+  for (uint8_t y = 0; y < maxHeight - 1; y++) {
     for (uint8_t x = 0; x < maxWidth; x++) {
       fireBuffer[x][y] = min( 255, round( (
-          fireBuffer[(x-1+maxWidth) % maxWidth][(y+1) % maxHeight]
-        + fireBuffer[(x) % maxWidth][(y+1) % maxHeight]
-        + fireBuffer[(x+1) % maxWidth][(y+1) % maxHeight]
-        + fireBuffer[(x) % maxWidth][(y+2) % maxHeight]
-        * 16 ) / 22
-      ) );
+                                            fireBuffer[(x - 1 + maxWidth) % maxWidth][(y + 1) % maxHeight]
+                                            + fireBuffer[(x) % maxWidth][(y + 1) % maxHeight]
+                                            + fireBuffer[(x + 1) % maxWidth][(y + 1) % maxHeight]
+                                            + fireBuffer[(x) % maxWidth][(y + 2) % maxHeight]
+                                            * 16 ) / 22
+                                        ) );
     }
   }
 

@@ -47,6 +47,7 @@ uint16_t lifeSpeed = 370;
 byte lifeFadeSteps = 16;
 byte lifeFadeIndex = 0;
 uint8_t lifeFadeInterval = 16;
+uint16_t lifeReviveThreshold = 12; // Below this many live cells, gently inject a glider rather than dying out.
 byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
@@ -794,6 +795,19 @@ void gradient() {
   leds.show();
 }
 
+// Lay a glider into nextColor at (x,y). A glider is alive and mobile, so it
+// reliably revives a dwindling board (and travels the torus) instead of fizzling.
+// Writing nextColor (with currentColor left at 0) lets the fade pipeline ease it in.
+void seedGlider(uint8_t x, uint8_t y) {
+  static const uint8_t glider[5][2] = {{0, 1}, {1, 2}, {2, 0}, {2, 1}, {2, 2}};
+  for ( byte i = 0; i < 5; i++ ) {
+    uint8_t gx = (x + glider[i][0]) % maxWidth;
+    uint8_t gy = (y + glider[i][1]) % maxHeight;
+    allCells[gx][gy].hVal = hVal;
+    allCells[gx][gy].nextColor = hsl2rgb(hVal, sVal, lVal);
+  }
+}
+
 void lifeStart() {
   if ( lifePaused ) {
     oneColor(0);
@@ -866,10 +880,28 @@ void lifeStart() {
         }
       }
     }
-    // Extinction, prepare for a reset and hue shift.
+    // Gentle prevention: when the colony is dwindling (but not yet dead), drop in
+    // a glider rather than letting it collapse. Probabilistic so it stays subtle
+    // and doesn't flood a small stable population.
+    if ( currentLifeCount > 0 && currentLifeCount < lifeReviveThreshold && random(1, 101) > 50 ) {
+      seedGlider( random(0, maxWidth), random(0, maxHeight) );
+      currentLifeCount += 5;
+    }
+
+    // Soft reset: if the board still went extinct, shift the hue and lay a fresh
+    // ~20% seed into nextColor of the (now empty) cells. Leaving currentColor at 0
+    // lets the existing fade pipeline crossfade the new generation in from black,
+    // instead of the old hard reset that snapped to full brightness.
     if ( currentLifeCount == 0 ) {
-      lifeInitialized = false;
-      hVal = fmod(hVal++, 360);
+      hVal = (hVal + 1) % 360;
+      for ( byte w = 0; w < maxWidth; w++) {
+        for ( byte h = 0; h < maxHeight; h++) {
+          allCells[w][h].hVal = hVal;
+          if ( ! allCells[w][h].currentColor && random(1, 101) > 80 ) {
+            allCells[w][h].nextColor = hsl2rgb(hVal, sVal, lVal);
+          }
+        }
+      }
     }
   }
 

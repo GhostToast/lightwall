@@ -509,7 +509,7 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
       if ( -1 != oldPixel ) {
         uint32_t oldPixelColor = leds.getPixel(oldPixel);
         if ( 0 != oldPixelColor ) {
-          leds.setPixel(oldPixel, dimColor(leds.getPixel(oldPixel), rainColumn.dimAmount, rainColumn.canGoBlack));
+          leds.setPixel(oldPixel, fadeColor(leds.getPixel(oldPixel), rainColumn.color, rainColumn.dimAmount, rainColumn.canGoBlack));
         }
       }
     }
@@ -545,6 +545,54 @@ uint16_t remapXY(uint8_t x, uint8_t y) {
 // Remap coordinates to an actual pixel number within a panel.
 uint16_t innerRemapXY(uint8_t x, uint8_t y, uint16_t pixelBlock) {
   return pixelBlock * 64 + block[y % 8][x % 8];
+}
+
+// Calculate a diminished version of a color while preserving its hue.
+// Used by the matrix streamer tail. Unlike dimColor() (which subtracts a fixed
+// amount per channel and is used by the fire pattern for single-pass flicker),
+// this scales every channel by the same fraction, so the ratio between channels
+// stays constant and a color like amber (high R + mid G) fades as amber instead
+// of collapsing toward its dominant primary. Because the tail re-fades the live
+// pixel each frame, repeated scaling gives a smooth exponential decay.
+//
+// canGoBlack controls where that decay settles:
+//   true  -> the column fades all the way to true black.
+//   false -> the column holds a faint, hue-correct ember (~1/8 of its true
+//            color, from baseColor) so the trail stays softly lit.
+uint32_t fadeColor(uint32_t color, uint32_t baseColor, byte dimAmount, bool canGoBlack) {
+  uint8_t r1 = red(color);
+  uint8_t g1 = green(color);
+  uint8_t b1 = blue(color);
+  uint8_t w1 = white(color);
+
+  // dimAmount is treated as "parts of 256 to remove per tick" (2..8 ≈ 1-3%/frame).
+  uint16_t keep = 256 - dimAmount;
+  uint8_t r2 = (r1 * keep) >> 8;
+  uint8_t g2 = (g1 * keep) >> 8;
+  uint8_t b2 = (b1 * keep) >> 8;
+  uint8_t w2 = (w1 * keep) >> 8;
+
+  if ( canGoBlack ) {
+    // Nudge any still-lit channel down by 1 so small values actually reach black
+    // instead of stalling on integer rounding.
+    if (r2 == r1 && r1 > 0) r2--;
+    if (g2 == g1 && g1 > 0) g2--;
+    if (b2 == b1 && b1 > 0) b2--;
+    if (w2 == w1 && w1 > 0) w2--;
+  } else {
+    // Floor at a uniform fraction of the streamer's true color. Using the same
+    // fraction for every channel keeps the ember the correct hue.
+    uint8_t rf = red(baseColor)   >> 3;
+    uint8_t gf = green(baseColor) >> 3;
+    uint8_t bf = blue(baseColor)  >> 3;
+    uint8_t wf = white(baseColor) >> 3;
+    if (r2 < rf) r2 = rf;
+    if (g2 < gf) g2 = gf;
+    if (b2 < bf) b2 = bf;
+    if (w2 < wf) w2 = wf;
+  }
+
+  return makeColor(r2, g2, b2, w2);
 }
 
 // Calculate diminishing version of a color.

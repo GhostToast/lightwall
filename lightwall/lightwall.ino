@@ -477,6 +477,12 @@ void rainOneColumn( rainColumn &rainColumn ) {
       rainColumn.isRunning = 0;
       rainColumn.lastCompleted = currentTime;
 
+      // Snap the column to its resting state so no partially-faded tail remnant
+      // is left frozen at the bottom (short/slow streamers can run off the
+      // canvas before their fade completes). Must run before assignColumnProperties,
+      // which overwrites canGoBlack and color with new random values.
+      finalizeRainColumn( rainColumn );
+
       // Build new properties so the next streamer in this column will not be identical to this one.
       assignColumnProperties( rainColumn );
     }
@@ -518,6 +524,27 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
   // Increase head of the streamer, and set lastUpdated time.
   rainColumn.head++;
   rainColumn.lastUpdated = currentTime;
+}
+
+// Force a finished column to its final resting value across the whole canvas:
+// pure black for canGoBlack columns, or the faint hue-correct ember otherwise.
+// This guarantees the streamer appears to fall off-screen cleanly with no
+// frozen partial-fade remnant, independent of its height or dim speed.
+void finalizeRainColumn( rainColumn &rainColumn ) {
+  uint32_t rest = 0;
+  if ( ! rainColumn.canGoBlack ) {
+    rest = makeColor( red(rainColumn.color)   >> 3,
+                      green(rainColumn.color) >> 3,
+                      blue(rainColumn.color)  >> 3,
+                      white(rainColumn.color) >> 3 );
+  }
+
+  for ( uint8_t y = 0; y < maxHeight; y++ ) {
+    uint16_t pixel = remapXY( rainColumn.column, y );
+    if ( -1 != pixel ) {
+      leds.setPixel( pixel, rest );
+    }
+  }
 }
 
 // Remap coordinates to an actual pixel number. Or a non-existent one.

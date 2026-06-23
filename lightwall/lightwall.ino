@@ -1,4 +1,5 @@
 #include <OctoSK6812.h>
+#include <Entropy.h>
 #include "rainColumn.h"
 #include "cell.h"
 #include "utilities.h"
@@ -98,6 +99,12 @@ OctoSK6812 leds(ledsPerStrip, displayMemory, drawingMemory, SK6812_GRBW);
 
 void setup() {
   Serial.begin(9600);
+
+  // Seed the PRNG from the on-chip hardware RNG so the animations don't replay
+  // the same sequence on every boot. Reseeded again on user input (see parseData).
+  Entropy.Initialize();
+  randomSeed(Entropy.random());
+
   leds.begin();
   leds.show();
 }
@@ -141,6 +148,14 @@ void parseData() {
 
   // Get first part, should inform what mode this will be.
   strtokIndex = strtok(inputBuffer, ",");
+
+  // A real user command (not a passive state poll) just arrived -- a fine,
+  // clock-free moment to pull a fresh hardware seed so each new mode starts
+  // from a different sequence.
+  if ( strcmp(strtokIndex, "state") != 0 ) {
+    randomSeed(Entropy.random());
+  }
+
   if ( strcmp(strtokIndex, "state") == 0) {
     // Do not change user mode, as this request is attempting to receive current state.
     processState();

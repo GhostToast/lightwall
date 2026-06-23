@@ -97,6 +97,16 @@ int drawingMemory[ledsPerStrip * 8];
 
 OctoSK6812 leds(ledsPerStrip, displayMemory, drawingMemory, SK6812_GRBW);
 
+// remapXY returns this for gap struts and out-of-bounds coordinates.
+#define NO_PIXEL 0xFFFF
+
+// OctoSK6812::setPixel does NO bounds checking, so any draw originating from a
+// remapXY result must be guarded -- an invalid index writes into (or past) the
+// draw buffer. A single range check catches both NO_PIXEL and any stray index.
+inline void setPixelSafe(uint16_t pixel, uint32_t color) {
+  if (pixel < NUM_LEDS) leds.setPixel(pixel, color);
+}
+
 void setup() {
   Serial.begin(9600);
 
@@ -512,12 +522,12 @@ void rainOneColumn( rainColumn &rainColumn ) {
 void updateRainColumnFrame(rainColumn &rainColumn) {
 
   // Lighten the front.
-  leds.setPixel(remapXY(rainColumn.column, rainColumn.head), lightenColor(rainColumn.color, rainColumn.headLightness));
-  leds.setPixel(remapXY(rainColumn.column, rainColumn.head - 1), lightenColor(rainColumn.color, round(rainColumn.headLightness * .66)));
-  leds.setPixel(remapXY(rainColumn.column, rainColumn.head - 2), lightenColor(rainColumn.color, round(rainColumn.headLightness * .33)));
+  setPixelSafe(remapXY(rainColumn.column, rainColumn.head), lightenColor(rainColumn.color, rainColumn.headLightness));
+  setPixelSafe(remapXY(rainColumn.column, rainColumn.head - 1), lightenColor(rainColumn.color, round(rainColumn.headLightness * .66)));
+  setPixelSafe(remapXY(rainColumn.column, rainColumn.head - 2), lightenColor(rainColumn.color, round(rainColumn.headLightness * .33)));
 
   // Standard color for behind the head.
-  leds.setPixel(remapXY(rainColumn.column, rainColumn.head - 3), rainColumn.color);
+  setPixelSafe(remapXY(rainColumn.column, rainColumn.head - 3), rainColumn.color);
 
   // Dim the tail.
   if ( rainColumn.head > rainColumn.height ) {
@@ -527,7 +537,7 @@ void updateRainColumnFrame(rainColumn &rainColumn) {
         break;
       }
       uint16_t oldPixel = remapXY(rainColumn.column, tail);
-      if ( -1 != oldPixel ) {
+      if ( oldPixel < NUM_LEDS ) {
         uint32_t oldPixelColor = leds.getPixel(oldPixel);
         if ( 0 != oldPixelColor ) {
           leds.setPixel(oldPixel, fadeTailColor(leds.getPixel(oldPixel), rainColumn.color, rainColumn.dimAmount, rainColumn.canGoBlack));
@@ -556,7 +566,7 @@ void finalizeRainColumn( rainColumn &rainColumn ) {
 
   for ( uint8_t y = 0; y < maxHeight; y++ ) {
     uint16_t pixel = remapXY( rainColumn.column, y );
-    if ( -1 != pixel ) {
+    if ( pixel < NUM_LEDS ) {
       leds.setPixel( pixel, rest );
     }
   }
@@ -565,10 +575,10 @@ void finalizeRainColumn( rainColumn &rainColumn ) {
 // Remap coordinates to an actual pixel number. Or a non-existent one.
 uint16_t remapXY(uint8_t x, uint8_t y) {
   // Boundary defense and gap handling to map 38x41 to physical 32x32
-  if (x >= maxWidth || y >= maxHeight || x < 0 || y < 0) return -1;
+  if (x >= maxWidth || y >= maxHeight || x < 0 || y < 0) return NO_PIXEL;
   // Gap detection (8-9, 18-19, 28-29 for X; 8-10, 19-21, 30-32 for Y)
-  if (x == 8 || x == 9 || x == 18 || x == 19 || x == 28 || x == 29) return -1;
-  if ((y >= 8 && y <= 10) || (y >= 19 && y <= 21) || (y >= 30 && y <= 32)) return -1;
+  if (x == 8 || x == 9 || x == 18 || x == 19 || x == 28 || x == 29) return NO_PIXEL;
+  if ((y >= 8 && y <= 10) || (y >= 19 && y <= 21) || (y >= 30 && y <= 32)) return NO_PIXEL;
 
   // Normalize, handle 180-degree flip for left panels, and lookup grid
   uint8_t rx = x;
@@ -580,8 +590,8 @@ uint16_t remapXY(uint8_t x, uint8_t y) {
     ry = 7 - (ry % 8) + ((ry / 8) * 8);
   }
 
-  uint16_t pixelBlock = grid[ry / 8][rx / 8];
-  return (-1 == pixelBlock) ? -1 : innerRemapXY(rx, ry, pixelBlock);
+  int pixelBlock = grid[ry / 8][rx / 8];
+  return (pixelBlock < 0) ? NO_PIXEL : innerRemapXY(rx, ry, pixelBlock);
 }
 
 // Remap coordinates to an actual pixel number within a panel.
@@ -775,7 +785,7 @@ void gradient() {
       uint32_t color = makeColor( r, g, b, w );
 
       for (uint8_t x = 0; x < maxWidth; x++) {
-        leds.setPixel(remapXY(x, y), color);
+        setPixelSafe(remapXY(x, y), color);
       }
     }
     gradientProcessed = 1;
@@ -796,14 +806,15 @@ void lifeStart() {
     lifeFadeIndex = 0;
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
-        if (remapXY(w, h) == -1) continue; // Ignore gaps
+        // Gap (strut) cells are seeded and simulated like any other cell; they
+        // simply aren't drawn (setPixelSafe drops their NO_PIXEL index).
         allCells[w][h].hVal = hVal;
 
         // Populate life randomly to 20% of board.
         if ( random(1, 101) > 80 ) {
           allCells[w][h].currentColor = hsl2rgb(hVal, sVal, lVal);
           allCells[w][h].nextColor = hsl2rgb(hVal, sVal, lVal);
-          leds.setPixel( remapXY(w, h), hsl2rgb(hVal, sVal, lVal) );
+          setPixelSafe( remapXY(w, h), hsl2rgb(hVal, sVal, lVal) );
         }
       }
     }
@@ -873,7 +884,7 @@ void lifeStart() {
           gTemp = ((green(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (green(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
           bTemp = ((blue(allCells[w][h].currentColor) * (lifeFadeSteps - lifeFadeIndex)) + (blue(allCells[w][h].nextColor) * lifeFadeIndex)) / lifeFadeSteps;
 
-          leds.setPixel( remapXY(w, h), makeColor( rTemp, gTemp, bTemp ) );
+          setPixelSafe( remapXY(w, h), makeColor( rTemp, gTemp, bTemp ) );
         }
       }
     }
@@ -885,7 +896,7 @@ void lifeStart() {
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
         allCells[w][h].currentColor = allCells[w][h].nextColor;
-        leds.setPixel( remapXY(w, h), allCells[w][h].currentColor );
+        setPixelSafe( remapXY(w, h), allCells[w][h].currentColor );
       }
     }
   }
@@ -991,7 +1002,6 @@ void fireStarter() {
     // Set buffers to 0.
     for (uint8_t y = 0; y < maxHeight; y++) {
       for (uint8_t x = 0; x < maxWidth; x++) {
-        if (remapXY(x, y) == -1) continue; // Skip gaps
         fireBuffer[x][y] = 0;
       }
     }
@@ -1038,7 +1048,7 @@ void fireStarter() {
   // Set the LEDs based on the buffer and palette.
   for (uint8_t y = 0; y < maxHeight; y++) {
     for (uint8_t x = 0; x < maxWidth; x++) {
-      leds.setPixel(remapXY(x, y), dimColor( firePalette[fireBuffer[x][y]], random(0, 8), 1));
+      setPixelSafe(remapXY(x, y), dimColor( firePalette[fireBuffer[x][y]], random(0, 8), 1));
     }
   }
   leds.show();

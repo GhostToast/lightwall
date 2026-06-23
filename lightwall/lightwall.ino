@@ -549,14 +549,16 @@ uint16_t innerRemapXY(uint8_t x, uint8_t y, uint16_t pixelBlock) {
 
 // Calculate a diminished version of a color while preserving its hue.
 // Used by the matrix streamer tail. Unlike dimColor() (which subtracts a fixed
-// amount per channel and is used by the fire pattern for single-pass flicker),
-// this scales every channel by the same fraction, so the ratio between channels
-// stays constant and a color like amber (high R + mid G) fades as amber instead
-// of collapsing toward its dominant primary. Because the tail re-fades the live
-// pixel each frame, repeated scaling gives a smooth exponential decay.
+// amount from each channel independently and is used by the fire pattern for
+// single-pass flicker), this fades by stepping the brightest channel down at a
+// constant rate (dimAmount per tick) and scaling the other channels to match.
+// Holding the channel ratios fixed keeps the color correct -- amber (high R +
+// mid G) fades as amber instead of collapsing toward its dominant primary --
+// while the constant step reproduces the original linear fade timing, so the
+// tail leaves the scene on the same schedule as before.
 //
-// canGoBlack controls where that decay settles:
-//   true  -> the column fades all the way to true black.
+// canGoBlack controls where the fade settles:
+//   true  -> the column fades all the way to true black (in m/dimAmount ticks).
 //   false -> the column holds a faint, hue-correct ember (~1/8 of its true
 //            color, from baseColor) so the trail stays softly lit.
 uint32_t fadeColor(uint32_t color, uint32_t baseColor, byte dimAmount, bool canGoBlack) {
@@ -565,21 +567,20 @@ uint32_t fadeColor(uint32_t color, uint32_t baseColor, byte dimAmount, bool canG
   uint8_t b1 = blue(color);
   uint8_t w1 = white(color);
 
-  // dimAmount is treated as "parts of 256 to remove per tick" (2..8 ≈ 1-3%/frame).
-  uint16_t keep = 256 - dimAmount;
-  uint8_t r2 = (r1 * keep) >> 8;
-  uint8_t g2 = (g1 * keep) >> 8;
-  uint8_t b2 = (b1 * keep) >> 8;
-  uint8_t w2 = (w1 * keep) >> 8;
+  // Drive the fade off the brightest channel so the perceived brightness drops
+  // at a constant rate, matching the old subtractive timing.
+  uint8_t m1 = max( max(r1, g1), max(b1, w1) );
+  if ( m1 == 0 ) return 0;
 
-  if ( canGoBlack ) {
-    // Nudge any still-lit channel down by 1 so small values actually reach black
-    // instead of stalling on integer rounding.
-    if (r2 == r1 && r1 > 0) r2--;
-    if (g2 == g1 && g1 > 0) g2--;
-    if (b2 == b1 && b1 > 0) b2--;
-    if (w2 == w1 && w1 > 0) w2--;
-  } else {
+  uint8_t m2 = (m1 > dimAmount) ? (m1 - dimAmount) : 0;
+
+  // Scale every channel by m2/m1 to preserve hue.
+  uint8_t r2 = (uint16_t)r1 * m2 / m1;
+  uint8_t g2 = (uint16_t)g1 * m2 / m1;
+  uint8_t b2 = (uint16_t)b1 * m2 / m1;
+  uint8_t w2 = (uint16_t)w1 * m2 / m1;
+
+  if ( ! canGoBlack ) {
     // Floor at a uniform fraction of the streamer's true color. Using the same
     // fraction for every channel keeps the ember the correct hue.
     uint8_t rf = red(baseColor)   >> 3;

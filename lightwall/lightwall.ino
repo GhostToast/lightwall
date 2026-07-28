@@ -145,14 +145,18 @@ const uint8_t stockPriceRow = chartHeight - GLYPH_HEIGHT; // Chart rows 25-31.
    high but lightness low gives deep jewel tones instead of primaries, which
    reads as considered rather than festive.
 
-   Saturation stays high on purpose. Desaturating a dark colour does not make it
-   subtler, it makes it grey -- an attempt at amber here at lightness 7 came out
-   (27, 19, 8), which reads as cream rather than amber. Hue survives darkness;
-   saturation does not.
+   Saturation is 100 and the hues are exactly 120 and 0, which is what keeps the
+   off-channels at zero. Anything else bleeds blue, and blue bleed is far more
+   visible here than the numbers suggest, because the fill covers most of the
+   display: an attempt at "emerald" hue 142 produced a fill of (1, 33, 13), where
+   blue is 39% of green, and it read as aquamarine. Hue 355 for "crimson" gave
+   (33, 1, 4) and read as magenta. Both looked correct in the web preview only
+   because its colours were hand-picked rather than derived from these hues.
 
-   The hues are nudged off the primaries: 142 is emerald rather than pure LED
-   green, 355 is crimson rather than fire-engine red. Set them to 120 and 0 for
-   exact primaries if you prefer.
+   Note that saturation is not the knob for subduing this. Desaturating a dark
+   colour does not make it subtler, it makes it grey -- an amber tried at
+   saturation 55 and lightness 7 came out (27, 19, 8) and read as cream. Hue
+   survives darkness; saturation does not. Lightness is the knob.
 
    Hues follow hsl2rgb() in utilities.h: 0 red, 60 yellow, 120 green, 240 blue.
    Note the comment there claiming 120 is yellow is wrong -- tracing h2rgb()
@@ -164,15 +168,17 @@ const uint8_t stockPriceRow = chartHeight - GLYPH_HEIGHT; // Chart rows 25-31.
    red/green/white trio, so it is kept well down: 80 here against the 180 the
    first version used.
 */
-const uint16_t stockGainHue = 142; // Emerald, not primary green.
-const uint16_t stockLossHue = 355; // Crimson, not fire-engine red.
-const uint8_t stockFillSat = 90;
+// Exact primaries. Do not nudge these off 120 and 0 -- see the note above about
+// blue bleed. Subdue with the lightness values, not the hue or saturation.
+const uint16_t stockGainHue = 120;
+const uint16_t stockLossHue = 0;
+const uint8_t stockFillSat = 100;
 const uint8_t stockFillLight = 7;
-const uint8_t stockGainLineSat = 90;
-const uint8_t stockGainLineLight = 19;
+const uint8_t stockGainLineSat = 100;
+const uint8_t stockGainLineLight = 18;
 // Red reads dimmer than green at equal lightness, so it gets a little more.
-const uint8_t stockLossLineSat = 90;
-const uint8_t stockLossLineLight = 22;
+const uint8_t stockLossLineSat = 100;
+const uint8_t stockLossLineLight = 21;
 const uint8_t stockBaselineWhite = 22;
 const uint8_t stockTextWhite = 80;
 

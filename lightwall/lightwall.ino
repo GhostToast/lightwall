@@ -4,6 +4,7 @@
 #include "cell.h"
 #include "utilities.h"
 #include "font.h"
+#include "sprites.h"
 
 /**
    LED order in a given block.
@@ -194,6 +195,14 @@ uint8_t stockBrightness = 155;
 // visible rather than quietly presenting month-old prices as current.
 const uint8_t stockStaleDivisor = 2;
 
+// Sprite mode. One 8x8 sprite per panel, 16 in all -- the panels are physically
+// 8x8 with struts between them, so a sprite lands exactly inside one and the
+// strut frames it. Like the chart, this is a still image redrawn only on change.
+uint8_t spriteChoice[16] = {0};
+uint8_t spriteBrightness = 155;
+byte spritesReceived = 0;
+byte spritesDirty = 0;
+
 const int ledsPerStrip = 128;
 #define NUM_LEDS 1024
 #define BRIGHTNESS 50
@@ -313,6 +322,9 @@ void parseData() {
   } else if (strcmp(strtokIndex, "stock") == 0) {
     userMode = 12;
     processStock(strtokIndex);
+  } else if (strcmp(strtokIndex, "sprites") == 0) {
+    userMode = 14;
+    processSprites(strtokIndex);
   }
 }
 
@@ -390,6 +402,8 @@ void processState() {
     Serial.print("<stock,");
     Serial.print(stockTicker);
     Serial.println(">");
+  } else if (14 == userMode) {
+    Serial.println("<sprites>");
   } else {
     //Serial.print("<fail>");
     Serial.println("x");
@@ -578,6 +592,41 @@ void processStock(char * strtokIndex) {
 
   stockReceived = 1;
   stockDirty = 1;
+}
+
+/**
+   Decode a sprite frame:
+
+     <sprites,IIIIIIIIIIIIIIII,NNN>
+
+   I  16 sprite choices, one per panel, encoded as 'A' + index. Panels run left
+      to right then top to bottom, so the first four are the top row.
+   N  overall brightness, 5-255 as decimal
+
+   Only choices are sent, never pixels: 16 sprites of 64 pixels would be 1024
+   values, far past what one serial frame can carry. The bitmaps live in
+   sprites.h and the server just says which to place where.
+*/
+void processSprites(char * strtokIndex) {
+  strtokIndex = strtok(NULL, ",");
+  if (strtokIndex == NULL || strlen(strtokIndex) < 16) {
+    return; // Truncated frame; keep showing whatever we had.
+  }
+  for (uint8_t panel = 0; panel < 16; panel++) {
+    uint8_t choice = strtokIndex[panel] - 'A';
+    spriteChoice[panel] = (choice < SPRITE_COUNT) ? choice : 0;
+  }
+
+  strtokIndex = strtok(NULL, ",");
+  if (strtokIndex != NULL) {
+    int requested = atoi(strtokIndex);
+    if (requested < 5) requested = 5;
+    if (requested > 255) requested = 255;
+    spriteBrightness = requested;
+  }
+
+  spritesReceived = 1;
+  spritesDirty = 1;
 }
 
 void processHSL(char * strtokIndex) {
@@ -1395,6 +1444,53 @@ void stockChart() {
   leds.show();
 }
 
+/**
+   Sprite mode: one 8x8 sprite per panel, 16 in all.
+
+   This is the reason the panel geometry is worth exploiting rather than working
+   around. Every other mode treats the struts as damage to be routed around; here
+   each panel is exactly one sprite and the strut becomes a frame around it.
+
+   Chart space maps straight onto it -- panel column times 8 plus the sprite's own
+   x -- so the existing lookup tables do all the strut arithmetic.
+*/
+void spriteShow() {
+  // Nothing to draw until the first frame arrives, so idle like mode 0.
+  if ( ! spritesReceived ) {
+    oneColor(0x00000010);
+    return;
+  }
+
+  // Still image: leave the panels alone unless something changed.
+  if ( ! spritesDirty ) {
+    return;
+  }
+  spritesDirty = 0;
+
+  for (uint16_t i = 0; i < NUM_LEDS; i++) {
+    leds.setPixel(i, 0);
+  }
+
+  for (uint8_t panel = 0; panel < 16; panel++) {
+    const uint8_t * bitmap = spriteData[spriteChoice[panel]];
+    uint8_t originX = (panel % 4) * SPRITE_SIZE;
+    uint8_t originY = (panel / 4) * SPRITE_SIZE;
+
+    for (uint8_t y = 0; y < SPRITE_SIZE; y++) {
+      for (uint8_t x = 0; x < SPRITE_SIZE; x++) {
+        uint8_t index = bitmap[y * SPRITE_SIZE + x];
+        if (index == 0) continue; // Unlit.
+
+        const uint8_t * rgb = spritePalette[index - 1];
+        setChartPixel(originX + x, originY + y,
+                      makeColor(rgb[0], rgb[1], rgb[2], 0, spriteBrightness));
+      }
+    }
+  }
+
+  leds.show();
+}
+
 void displayUserSelectedMode() {
   switch (userMode) {
     case 0: // None, dim white.
@@ -1450,6 +1546,10 @@ void displayUserSelectedMode() {
 
     case 12: // Stock chart.
       stockChart();
+      break;
+
+    case 14: // Sprites, one per panel.
+      spriteShow();
       break;
 
     default:

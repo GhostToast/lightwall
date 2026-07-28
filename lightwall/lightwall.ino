@@ -135,32 +135,44 @@ const uint8_t stockPriceRow = chartHeight - GLYPH_HEIGHT; // Chart rows 25-31.
    Palette. Every colour this mode draws is defined here, so it can be tuned by
    editing these numbers and reflashing -- nothing below hardcodes a colour.
 
-   Teal for gains and amber for losses, rather than the obvious green and red.
-   Green and red at full saturation on a bright panel reads as Christmas
-   decoration, which undercuts the whole point; it is also the single worst
-   colour pairing for red-green colourblindness, which affects most colourblind
-   people. Teal and amber stay distinguishable to everyone.
+   Green for gains and red for losses, which at this pixel density is worth
+   keeping -- there is a lot of information in a small space, and up-is-green is
+   read instantly in a way any other pairing has to be learned.
+
+   What made an earlier version look like Christmas decoration was not the hues
+   but the lightness: at saturation 100 and lightness 38 the green came out
+   (0, 193, 0), a fully saturated LED at almost full output. Keeping saturation
+   high but lightness low gives deep jewel tones instead of primaries, which
+   reads as considered rather than festive.
+
+   Saturation stays high on purpose. Desaturating a dark colour does not make it
+   subtler, it makes it grey -- an attempt at amber here at lightness 7 came out
+   (27, 19, 8), which reads as cream rather than amber. Hue survives darkness;
+   saturation does not.
+
+   The hues are nudged off the primaries: 142 is emerald rather than pure LED
+   green, 355 is crimson rather than fire-engine red. Set them to 120 and 0 for
+   exact primaries if you prefer.
 
    Hues follow hsl2rgb() in utilities.h: 0 red, 60 yellow, 120 green, 240 blue.
    Note the comment there claiming 120 is yellow is wrong -- tracing h2rgb()
    shows the scale is standard.
 
-   Lightness is kept far below 50 on purpose. These panels are bright enough
-   indoors that mid lightness is unpleasant, which is why every other mode does
-   the same (fire caps at 50, the HSL modes sit at 10).
-
    Text and the baseline use the W channel alone. These are SK6812 RGBW, so
    white comes from a dedicated LED rather than mixing RGB -- it stays neutral
-   and cannot be mistaken for part of the chart.
+   and cannot be mistaken for part of the chart. It is also the third of the
+   red/green/white trio, so it is kept well down: 80 here against the 180 the
+   first version used.
 */
-const uint16_t stockGainHue = 175; // Teal.
-const uint16_t stockLossHue = 35;  // Amber.
-const uint8_t stockFillSat = 55;
+const uint16_t stockGainHue = 142; // Emerald, not primary green.
+const uint16_t stockLossHue = 355; // Crimson, not fire-engine red.
+const uint8_t stockFillSat = 90;
 const uint8_t stockFillLight = 7;
-const uint8_t stockGainLineSat = 65;
-const uint8_t stockGainLineLight = 24;
-const uint8_t stockLossLineSat = 70;
-const uint8_t stockLossLineLight = 26;
+const uint8_t stockGainLineSat = 90;
+const uint8_t stockGainLineLight = 19;
+// Red reads dimmer than green at equal lightness, so it gets a little more.
+const uint8_t stockLossLineSat = 90;
+const uint8_t stockLossLineLight = 22;
 const uint8_t stockBaselineWhite = 22;
 const uint8_t stockTextWhite = 80;
 

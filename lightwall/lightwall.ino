@@ -105,9 +105,11 @@ char stockPrice[5] = {0};
 byte stockFlags = 0;
 byte stockPaused = 0;
 byte stockReceived = 0; // Nothing to draw until the first frame lands.
-unsigned long stockLastTime = 0;
-uint8_t stockPulseInterval = 40; // Breathing rate for today's column.
-uint16_t stockPulsePhase = 0;
+// This chart is static between updates, so it is drawn once when something
+// actually changes rather than on a timer. Redrawing a still image 25 times a
+// second is not just wasted work -- any variation between refreshes shows up as
+// shimmer on a display this bright.
+byte stockDirty = 0;
 
 // The wall is 16 discrete 8x8 panels, so the usable virtual coordinates are
 // interrupted by strut gaps -- 2 columns wide but 3 rows tall. These tables map
@@ -514,13 +516,14 @@ void processStock(char * strtokIndex) {
   stockFlags = (strtokIndex == NULL) ? 0 : atoi(strtokIndex);
 
   stockReceived = 1;
-  fadeIndex = 0;
+  stockDirty = 1;
 }
 
 void processStockPause(char * strtokIndex) {
   // Get paused status (boolean).
   strtokIndex = strtok(NULL, ",");
   stockPaused = atoi(strtokIndex);
+  stockDirty = 1; // Repaint on resume.
 }
 
 void processHSL(char * strtokIndex) {
@@ -1271,12 +1274,19 @@ void drawStockText(const char * text, uint8_t topRow, uint8_t brightness) {
 
    Reading the chart: the baseline is where the price sat 32 trading days ago,
    and the filled area between it and the line shows the move since, green above
-   and red below. Today is the rightmost column, which breathes gently so a live
-   display is distinguishable from a frozen one.
+   and red below.
+
+   This is a still image. It repaints only when the data actually changes, so an
+   update is silent -- no fade, no pulse, nothing that draws the eye. An earlier
+   version eased each new frame in from black, which on a one minute refresh read
+   as the whole wall flashing.
 */
 void stockChart() {
   if ( stockPaused ) {
-    oneColor(0);
+    if ( stockDirty ) {
+      stockDirty = 0;
+      oneColor(0);
+    }
     return;
   }
 
@@ -1286,28 +1296,15 @@ void stockChart() {
     return;
   }
 
-  if ( (currentTime - stockLastTime) < stockPulseInterval ) {
+  // Already on screen and unchanged: leave the panels alone.
+  if ( ! stockDirty ) {
     return;
   }
-  stockLastTime = currentTime;
+  stockDirty = 0;
 
-  // Ease the frame in after an update rather than snapping to it.
-  if ( fadeIndex < fadeSteps ) {
-    fadeIndex++;
-  }
-  uint8_t brightness = (fadeIndex >= fadeSteps)
-                       ? 255
-                       : 1 + ((uint16_t)fadeIndex * 254) / fadeSteps;
-
-  // Stale data still shows, at half brightness, so a dead poller is visible
-  // rather than quietly presenting month-old prices as current.
-  if ( stockFlags & 1 ) {
-    brightness = brightness / 2;
-  }
-
-  // Triangle wave for today's column, roughly a 2 second cycle.
-  stockPulsePhase = (stockPulsePhase + 1) % 50;
-  uint8_t pulse = (stockPulsePhase < 25) ? stockPulsePhase : (50 - stockPulsePhase);
+  // Stale data still shows, dimmer, so a dead poller is visible rather than
+  // quietly presenting month-old prices as current.
+  uint8_t brightness = (stockFlags & 1) ? 110 : 255;
 
   // Lightness is kept low here for the same reason every other mode does it --
   // the panels are bright enough that full lightness is unpleasant indoors.
@@ -1339,9 +1336,6 @@ void stockChart() {
     // instead of breaking into disconnected dots.
     uint8_t previous = (x == 0) ? y : stockSeries[x - 1];
     uint32_t line = up ? gainLine : lossLine;
-    if ( x == chartWidth - 1 ) {
-      line = stockScale(hsl2rgb(up ? 120 : 0, 100, 38 + (pulse / 2)), brightness);
-    }
     for (uint8_t step = min(y, previous); step <= max(y, previous); step++) {
       setChartPixel(x, step, line);
     }

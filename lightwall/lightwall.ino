@@ -103,7 +103,6 @@ uint8_t stockBaseline = chartHeight / 2;
 char stockTicker[5] = {0};
 char stockPrice[5] = {0};
 byte stockFlags = 0;
-byte stockPaused = 0;
 byte stockReceived = 0; // Nothing to draw until the first frame lands.
 // This chart is static between updates, so it is drawn once when something
 // actually changes rather than on a timer. Redrawing a still image 25 times a
@@ -131,6 +130,47 @@ const uint8_t chartRow[chartHeight] = {
 // Text bands. Both sit inside a panel row so no glyph is bisected by a strut.
 const uint8_t stockTickerRow = 0;                   // Chart rows 0-6.
 const uint8_t stockPriceRow = chartHeight - GLYPH_HEIGHT; // Chart rows 25-31.
+
+/*
+   Palette. Every colour this mode draws is defined here, so it can be tuned by
+   editing these numbers and reflashing -- nothing below hardcodes a colour.
+
+   Teal for gains and amber for losses, rather than the obvious green and red.
+   Green and red at full saturation on a bright panel reads as Christmas
+   decoration, which undercuts the whole point; it is also the single worst
+   colour pairing for red-green colourblindness, which affects most colourblind
+   people. Teal and amber stay distinguishable to everyone.
+
+   Hues follow hsl2rgb() in utilities.h: 0 red, 60 yellow, 120 green, 240 blue.
+   Note the comment there claiming 120 is yellow is wrong -- tracing h2rgb()
+   shows the scale is standard.
+
+   Lightness is kept far below 50 on purpose. These panels are bright enough
+   indoors that mid lightness is unpleasant, which is why every other mode does
+   the same (fire caps at 50, the HSL modes sit at 10).
+
+   Text and the baseline use the W channel alone. These are SK6812 RGBW, so
+   white comes from a dedicated LED rather than mixing RGB -- it stays neutral
+   and cannot be mistaken for part of the chart.
+*/
+const uint16_t stockGainHue = 175; // Teal.
+const uint16_t stockLossHue = 35;  // Amber.
+const uint8_t stockFillSat = 55;
+const uint8_t stockFillLight = 7;
+const uint8_t stockGainLineSat = 65;
+const uint8_t stockGainLineLight = 24;
+const uint8_t stockLossLineSat = 70;
+const uint8_t stockLossLineLight = 26;
+const uint8_t stockBaselineWhite = 22;
+const uint8_t stockTextWhite = 80;
+
+// Scales the whole mode as the very last step. Turn this down to dim everything
+// at once without disturbing the relative weights above.
+const uint8_t stockBrightness = 155;
+
+// Stale data is shown at this fraction of the above, so a dead poller is
+// visible rather than quietly presenting month-old prices as current.
+const uint8_t stockStaleBrightness = 70;
 
 const int ledsPerStrip = 128;
 #define NUM_LEDS 1024
@@ -251,9 +291,6 @@ void parseData() {
   } else if (strcmp(strtokIndex, "stock") == 0) {
     userMode = 12;
     processStock(strtokIndex);
-  } else if (strcmp(strtokIndex, "stockpause") == 0) {
-    userMode = 13;
-    processStockPause(strtokIndex);
   }
 }
 
@@ -324,13 +361,11 @@ void processState() {
     Serial.print("<lifepause,");
     Serial.print(lifePaused);
     Serial.println(">");
-  } else if (12 == userMode || 13 == userMode) {
+  } else if (12 == userMode) {
     // Deliberately terse: the server is the source of truth for this mode and
     // caches the series itself, so there is no reason to echo 32 rows back up
-    // the wire. It only needs to know the wall is on stock and whether paused.
+    // the wire. It only needs to know the wall is on stock, and which symbol.
     Serial.print("<stock,");
-    Serial.print(stockPaused);
-    Serial.print(",");
     Serial.print(stockTicker);
     Serial.println(">");
   } else {
@@ -478,12 +513,6 @@ void processLifePause(char * strtokIndex) {
    value is clamped and a short frame is rejected outright.
 */
 void processStock(char * strtokIndex) {
-  // Note that this deliberately does NOT clear stockPaused, unlike the other
-  // modes. Their commands only ever arrive because a person pressed something,
-  // whereas these arrive unattended every minute from the poller -- resetting
-  // the flag here would quietly undo a pause the user had asked for. Pause is
-  // changed only by stockpause.
-
   // Series: one character per column.
   strtokIndex = strtok(NULL, ",");
   if (strtokIndex == NULL || strlen(strtokIndex) < chartWidth) {
@@ -517,13 +546,6 @@ void processStock(char * strtokIndex) {
 
   stockReceived = 1;
   stockDirty = 1;
-}
-
-void processStockPause(char * strtokIndex) {
-  // Get paused status (boolean).
-  strtokIndex = strtok(NULL, ",");
-  stockPaused = atoi(strtokIndex);
-  stockDirty = 1; // Repaint on resume.
 }
 
 void processHSL(char * strtokIndex) {
@@ -1236,7 +1258,7 @@ inline uint32_t stockScale(uint32_t color, uint8_t brightness) {
    legibility no matter what the price did.
 */
 void drawStockText(const char * text, uint8_t topRow, uint8_t brightness) {
-  uint32_t ink = stockScale(makeColor(0, 0, 0, 180), brightness);
+  uint32_t ink = stockScale(makeColor(0, 0, 0, stockTextWhite), brightness);
 
   for (uint8_t pass = 0; pass < 2; pass++) {
     for (uint8_t slot = 0; slot < 4; slot++) {
@@ -1282,14 +1304,6 @@ void drawStockText(const char * text, uint8_t topRow, uint8_t brightness) {
    as the whole wall flashing.
 */
 void stockChart() {
-  if ( stockPaused ) {
-    if ( stockDirty ) {
-      stockDirty = 0;
-      oneColor(0);
-    }
-    return;
-  }
-
   // Nothing to draw until the first frame arrives, so idle like mode 0.
   if ( ! stockReceived ) {
     oneColor(0x00000010);
@@ -1302,17 +1316,17 @@ void stockChart() {
   }
   stockDirty = 0;
 
-  // Stale data still shows, dimmer, so a dead poller is visible rather than
-  // quietly presenting month-old prices as current.
-  uint8_t brightness = (stockFlags & 1) ? 110 : 255;
+  uint8_t brightness = (stockFlags & 1) ? stockStaleBrightness : stockBrightness;
 
-  // Lightness is kept low here for the same reason every other mode does it --
-  // the panels are bright enough that full lightness is unpleasant indoors.
-  uint32_t gainFill = stockScale(hsl2rgb(120, 100, 12), brightness);
-  uint32_t lossFill = stockScale(hsl2rgb(0, 100, 12), brightness);
-  uint32_t gainLine = stockScale(hsl2rgb(120, 100, 38), brightness);
-  uint32_t lossLine = stockScale(hsl2rgb(0, 100, 38), brightness);
-  uint32_t baseInk  = stockScale(makeColor(0, 0, 0, 40), brightness);
+  uint32_t gainFill = stockScale(
+                        hsl2rgb(stockGainHue, stockFillSat, stockFillLight), brightness);
+  uint32_t lossFill = stockScale(
+                        hsl2rgb(stockLossHue, stockFillSat, stockFillLight), brightness);
+  uint32_t gainLine = stockScale(
+                        hsl2rgb(stockGainHue, stockGainLineSat, stockGainLineLight), brightness);
+  uint32_t lossLine = stockScale(
+                        hsl2rgb(stockLossHue, stockLossLineSat, stockLossLineLight), brightness);
+  uint32_t baseInk  = stockScale(makeColor(0, 0, 0, stockBaselineWhite), brightness);
 
   for (uint16_t i = 0; i < NUM_LEDS; i++) {
     leds.setPixel(i, 0);
@@ -1401,10 +1415,6 @@ void displayUserSelectedMode() {
       break;
 
     case 12: // Stock chart.
-      stockChart();
-      break;
-
-    case 13: // Pause stock chart.
       stockChart();
       break;
 

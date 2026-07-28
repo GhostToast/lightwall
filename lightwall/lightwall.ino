@@ -3,6 +3,7 @@
 #include "rainColumn.h"
 #include "cell.h"
 #include "utilities.h"
+#include "font.h"
 
 /**
    LED order in a given block.
@@ -65,7 +66,9 @@ unsigned long hslLastTime = 0;
 byte fadeSteps = 32;
 byte fadeIndex = 0;
 uint16_t fadeInterval = 15;
-const byte buffSize = 40;
+// The stock frame is the longest command at 52 payload characters, so this has
+// to clear it with room to spare. Every other command is well under 40.
+const byte buffSize = 64;
 char inputBuffer[buffSize];
 const char startMarker = '<';
 const char endMarker = '>';
@@ -89,6 +92,43 @@ uint16_t hslInterval = 300;
 uint16_t hVal = 0;
 byte sVal = 0;
 byte lVal = 0;
+
+// Stock chart mode. The server does all the arithmetic and hands us finished
+// rows, so these are just the decoded frame: one chart row per trading day, the
+// baseline everything is measured against, and the two 4-glyph text bands.
+const uint8_t chartWidth = 32;
+const uint8_t chartHeight = 32;
+uint8_t stockSeries[chartWidth];
+uint8_t stockBaseline = chartHeight / 2;
+char stockTicker[5] = {0};
+char stockPrice[5] = {0};
+byte stockFlags = 0;
+byte stockPaused = 0;
+byte stockReceived = 0; // Nothing to draw until the first frame lands.
+unsigned long stockLastTime = 0;
+uint8_t stockPulseInterval = 40; // Breathing rate for today's column.
+uint16_t stockPulsePhase = 0;
+
+// The wall is 16 discrete 8x8 panels, so the usable virtual coordinates are
+// interrupted by strut gaps -- 2 columns wide but 3 rows tall. These tables map
+// a clean 32x32 chart space onto them, letting the render code below stay
+// completely free of gap arithmetic. Compare the gap tests in remapXY().
+const uint8_t chartCol[chartWidth] = {
+   0,  1,  2,  3,  4,  5,  6,  7,
+  10, 11, 12, 13, 14, 15, 16, 17,
+  20, 21, 22, 23, 24, 25, 26, 27,
+  30, 31, 32, 33, 34, 35, 36, 37
+};
+const uint8_t chartRow[chartHeight] = {
+   0,  1,  2,  3,  4,  5,  6,  7,
+  11, 12, 13, 14, 15, 16, 17, 18,
+  22, 23, 24, 25, 26, 27, 28, 29,
+  33, 34, 35, 36, 37, 38, 39, 40
+};
+
+// Text bands. Both sit inside a panel row so no glyph is bisected by a strut.
+const uint8_t stockTickerRow = 0;                   // Chart rows 0-6.
+const uint8_t stockPriceRow = chartHeight - GLYPH_HEIGHT; // Chart rows 25-31.
 
 const int ledsPerStrip = 128;
 #define NUM_LEDS 1024
@@ -128,7 +168,10 @@ void loop() {
 }
 
 void processUserInput() {
-  if ( Serial.available() > 0) {
+  // Drain the whole RX buffer each pass rather than one byte per loop(). At one
+  // byte per iteration a 54-byte stock frame would take 54 frames to arrive,
+  // and the hardware buffer is only 64 bytes deep.
+  while ( Serial.available() > 0) {
     char x = Serial.read();
 
     if (x == endMarker) {
@@ -203,6 +246,12 @@ void parseData() {
   } else if (strcmp(strtokIndex, "lifepause") == 0) {
     userMode = 11;
     processLifePause(strtokIndex);
+  } else if (strcmp(strtokIndex, "stock") == 0) {
+    userMode = 12;
+    processStock(strtokIndex);
+  } else if (strcmp(strtokIndex, "stockpause") == 0) {
+    userMode = 13;
+    processStockPause(strtokIndex);
   }
 }
 
@@ -272,6 +321,15 @@ void processState() {
   } else if (11 == userMode) {
     Serial.print("<lifepause,");
     Serial.print(lifePaused);
+    Serial.println(">");
+  } else if (12 == userMode || 13 == userMode) {
+    // Deliberately terse: the server is the source of truth for this mode and
+    // caches the series itself, so there is no reason to echo 32 rows back up
+    // the wire. It only needs to know the wall is on stock and whether paused.
+    Serial.print("<stock,");
+    Serial.print(stockPaused);
+    Serial.print(",");
+    Serial.print(stockTicker);
     Serial.println(">");
   } else {
     //Serial.print("<fail>");
@@ -396,6 +454,73 @@ void processLifePause(char * strtokIndex) {
   if (lifePaused) {
     lifeInitialized = 0;
   }
+}
+
+/**
+   Decode a stock frame:
+
+     <stock,SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS,B,TTTT,PPPP,F>
+
+   S  32 chart rows, one character per trading day, encoded as 'A' + row
+   B  baseline row, same encoding
+   T  ticker, 4 glyph characters, '_' for blank
+   P  price, 4 glyph characters
+   F  flag bitfield; bit 0 means the data is stale
+
+   Single characters rather than comma-separated integers is what keeps this
+   inside one atomic frame -- as CSV it would be roughly 120 bytes and need a
+   chunked protocol with ordering state.
+
+   The server already constrains what it sends, but a malformed or truncated
+   frame must not leave us drawing off the end of the wall, so every decoded
+   value is clamped and a short frame is rejected outright.
+*/
+void processStock(char * strtokIndex) {
+  // Note that this deliberately does NOT clear stockPaused, unlike the other
+  // modes. Their commands only ever arrive because a person pressed something,
+  // whereas these arrive unattended every minute from the poller -- resetting
+  // the flag here would quietly undo a pause the user had asked for. Pause is
+  // changed only by stockpause.
+
+  // Series: one character per column.
+  strtokIndex = strtok(NULL, ",");
+  if (strtokIndex == NULL || strlen(strtokIndex) < chartWidth) {
+    return; // Truncated frame; keep showing whatever we had.
+  }
+  for (uint8_t x = 0; x < chartWidth; x++) {
+    uint8_t row = strtokIndex[x] - 'A';
+    stockSeries[x] = (row < chartHeight) ? row : chartHeight - 1;
+  }
+
+  // Baseline row.
+  strtokIndex = strtok(NULL, ",");
+  if (strtokIndex == NULL) return;
+  uint8_t baseline = strtokIndex[0] - 'A';
+  stockBaseline = (baseline < chartHeight) ? baseline : chartHeight - 1;
+
+  // Ticker and price, 4 glyphs each.
+  strtokIndex = strtok(NULL, ",");
+  if (strtokIndex == NULL) return;
+  strncpy(stockTicker, strtokIndex, 4);
+  stockTicker[4] = 0;
+
+  strtokIndex = strtok(NULL, ",");
+  if (strtokIndex == NULL) return;
+  strncpy(stockPrice, strtokIndex, 4);
+  stockPrice[4] = 0;
+
+  // Flags are optional, so an older server still works.
+  strtokIndex = strtok(NULL, ",");
+  stockFlags = (strtokIndex == NULL) ? 0 : atoi(strtokIndex);
+
+  stockReceived = 1;
+  fadeIndex = 0;
+}
+
+void processStockPause(char * strtokIndex) {
+  // Get paused status (boolean).
+  strtokIndex = strtok(NULL, ",");
+  stockPaused = atoi(strtokIndex);
 }
 
 void processHSL(char * strtokIndex) {
@@ -1088,6 +1213,146 @@ void fireStarter() {
   globalLastTime = currentTime;
 }
 
+// Draw one pixel in chart space, letting the lookup tables handle the struts.
+inline void setChartPixel(uint8_t cx, uint8_t cy, uint32_t color) {
+  if (cx >= chartWidth || cy >= chartHeight) return;
+  setPixelSafe(remapXY(chartCol[cx], chartRow[cy]), color);
+}
+
+// Scale a color for the fade-in after a new frame, and for the stale dimming.
+inline uint32_t stockScale(uint32_t color, uint8_t brightness) {
+  return makeColor(red(color), green(color), blue(color), white(color), brightness);
+}
+
+/**
+   Blit a 4-character band, one glyph per panel.
+
+   Each glyph is drawn twice: first a 1px dark halo around every lit pixel, then
+   the pixel itself. Without the halo the text would sit directly on the chart
+   fill and turn to mush wherever the series is dense -- the knockout guarantees
+   legibility no matter what the price did.
+*/
+void drawStockText(const char * text, uint8_t topRow, uint8_t brightness) {
+  uint32_t ink = stockScale(makeColor(0, 0, 0, 180), brightness);
+
+  for (uint8_t pass = 0; pass < 2; pass++) {
+    for (uint8_t slot = 0; slot < 4; slot++) {
+      if (text[slot] == 0) break;
+      uint8_t glyph = glyphIndex(text[slot]);
+      uint8_t left = slot * 8 + 1; // Centered in the panel, 1px margin.
+
+      for (uint8_t row = 0; row < GLYPH_HEIGHT; row++) {
+        uint8_t bits = font5x7[glyph][row];
+        for (uint8_t column = 0; column < GLYPH_WIDTH; column++) {
+          if (! (bits >> (GLYPH_WIDTH - 1 - column) & 1)) continue;
+
+          if (pass == 0) {
+            // Knockout: clear the 3x3 neighborhood.
+            for (int8_t dy = -1; dy <= 1; dy++) {
+              for (int8_t dx = -1; dx <= 1; dx++) {
+                setChartPixel(left + column + dx, topRow + row + dy, 0);
+              }
+            }
+          } else {
+            setChartPixel(left + column, topRow + row, ink);
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+   Stock position: a 32 day sparkline with the ticker and current price.
+
+   The server hands us finished chart rows, so there is no price arithmetic
+   here -- we only draw. Layout is the chart across all 32 rows, with the ticker
+   overlaid on the top panel row and the price on the bottom.
+
+   Reading the chart: the baseline is where the price sat 32 trading days ago,
+   and the filled area between it and the line shows the move since, green above
+   and red below. Today is the rightmost column, which breathes gently so a live
+   display is distinguishable from a frozen one.
+*/
+void stockChart() {
+  if ( stockPaused ) {
+    oneColor(0);
+    return;
+  }
+
+  // Nothing to draw until the first frame arrives, so idle like mode 0.
+  if ( ! stockReceived ) {
+    oneColor(0x00000010);
+    return;
+  }
+
+  if ( (currentTime - stockLastTime) < stockPulseInterval ) {
+    return;
+  }
+  stockLastTime = currentTime;
+
+  // Ease the frame in after an update rather than snapping to it.
+  if ( fadeIndex < fadeSteps ) {
+    fadeIndex++;
+  }
+  uint8_t brightness = (fadeIndex >= fadeSteps)
+                       ? 255
+                       : 1 + ((uint16_t)fadeIndex * 254) / fadeSteps;
+
+  // Stale data still shows, at half brightness, so a dead poller is visible
+  // rather than quietly presenting month-old prices as current.
+  if ( stockFlags & 1 ) {
+    brightness = brightness / 2;
+  }
+
+  // Triangle wave for today's column, roughly a 2 second cycle.
+  stockPulsePhase = (stockPulsePhase + 1) % 50;
+  uint8_t pulse = (stockPulsePhase < 25) ? stockPulsePhase : (50 - stockPulsePhase);
+
+  // Lightness is kept low here for the same reason every other mode does it --
+  // the panels are bright enough that full lightness is unpleasant indoors.
+  uint32_t gainFill = stockScale(hsl2rgb(120, 100, 12), brightness);
+  uint32_t lossFill = stockScale(hsl2rgb(0, 100, 12), brightness);
+  uint32_t gainLine = stockScale(hsl2rgb(120, 100, 38), brightness);
+  uint32_t lossLine = stockScale(hsl2rgb(0, 100, 38), brightness);
+  uint32_t baseInk  = stockScale(makeColor(0, 0, 0, 40), brightness);
+
+  for (uint16_t i = 0; i < NUM_LEDS; i++) {
+    leds.setPixel(i, 0);
+  }
+
+  for (uint8_t x = 0; x < chartWidth; x++) {
+    uint8_t y = stockSeries[x];
+    boolean up = (y <= stockBaseline); // Lower row number is higher price.
+
+    // Area between the line and the baseline.
+    uint8_t from = min(y, stockBaseline);
+    uint8_t to = max(y, stockBaseline);
+    for (uint8_t fill = from; fill <= to; fill++) {
+      setChartPixel(x, fill, up ? gainFill : lossFill);
+    }
+
+    // The baseline itself, drawn over the fill so it stays readable.
+    setChartPixel(x, stockBaseline, baseInk);
+
+    // Line, interpolated from the previous day so steep moves stay connected
+    // instead of breaking into disconnected dots.
+    uint8_t previous = (x == 0) ? y : stockSeries[x - 1];
+    uint32_t line = up ? gainLine : lossLine;
+    if ( x == chartWidth - 1 ) {
+      line = stockScale(hsl2rgb(up ? 120 : 0, 100, 38 + (pulse / 2)), brightness);
+    }
+    for (uint8_t step = min(y, previous); step <= max(y, previous); step++) {
+      setChartPixel(x, step, line);
+    }
+  }
+
+  drawStockText(stockTicker, stockTickerRow, brightness);
+  drawStockText(stockPrice, stockPriceRow, brightness);
+
+  leds.show();
+}
+
 void displayUserSelectedMode() {
   switch (userMode) {
     case 0: // None, dim white.
@@ -1139,6 +1404,14 @@ void displayUserSelectedMode() {
 
     case 11: // Pause life.
       lifeStart();
+      break;
+
+    case 12: // Stock chart.
+      stockChart();
+      break;
+
+    case 13: // Pause stock chart.
+      stockChart();
       break;
 
     default:

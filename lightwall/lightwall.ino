@@ -182,13 +182,17 @@ const uint8_t stockLossLineLight = 21;
 const uint8_t stockBaselineWhite = 22;
 const uint8_t stockTextWhite = 80;
 
-// Scales the whole mode as the very last step. Turn this down to dim everything
-// at once without disturbing the relative weights above.
-const uint8_t stockBrightness = 155;
+// Scales the whole mode as the very last step, without disturbing the relative
+// weights above. Sent with every frame rather than fixed here: what is pleasant
+// to look at in person is far too bright for a webcam, which has roughly half
+// the dynamic range of an eye, and switching between the two should not need a
+// reflash. Only the starting value lives here, for the window between boot and
+// the first frame.
+uint8_t stockBrightness = 155;
 
-// Stale data is shown at this fraction of the above, so a dead poller is
+// Stale data is dimmed to this fraction of the above, so a dead poller is
 // visible rather than quietly presenting month-old prices as current.
-const uint8_t stockStaleBrightness = 70;
+const uint8_t stockStaleDivisor = 2;
 
 const int ledsPerStrip = 128;
 #define NUM_LEDS 1024
@@ -561,6 +565,16 @@ void processStock(char * strtokIndex) {
   // Flags are optional, so an older server still works.
   strtokIndex = strtok(NULL, ",");
   stockFlags = (strtokIndex == NULL) ? 0 : atoi(strtokIndex);
+
+  // Brightness likewise: absent means keep whatever we are already using, so a
+  // server predating this field does not black the wall out.
+  strtokIndex = strtok(NULL, ",");
+  if (strtokIndex != NULL) {
+    int requested = atoi(strtokIndex);
+    if (requested < 5) requested = 5;      // Fully off reads as a fault.
+    if (requested > 255) requested = 255;
+    stockBrightness = requested;
+  }
 
   stockReceived = 1;
   stockDirty = 1;
@@ -1334,7 +1348,9 @@ void stockChart() {
   }
   stockDirty = 0;
 
-  uint8_t brightness = (stockFlags & 1) ? stockStaleBrightness : stockBrightness;
+  uint8_t brightness = (stockFlags & 1)
+                       ? stockBrightness / stockStaleDivisor
+                       : stockBrightness;
 
   uint32_t gainFill = stockScale(
                         hsl2rgb(stockGainHue, stockFillSat, stockFillLight), brightness);

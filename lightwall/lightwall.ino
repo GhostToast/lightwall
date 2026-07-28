@@ -111,6 +111,16 @@ byte stockReceived = 0; // Nothing to draw until the first frame lands.
 // shimmer on a display this bright.
 byte stockDirty = 0;
 
+// The LED strips are powered separately from the Teensy, so they can be switched
+// off and on while this sketch keeps running. SK6812s hold their frame in their
+// own registers and come back dark, so a mode that only draws on change would
+// stay dark until its next update -- which for the stock chart could be the next
+// trading day. Re-sending the buffer we already hold on a slow timer fixes that
+// without recomputing anything: about five transfers a second against the 25 a
+// continuous redraw would cost.
+const uint16_t staticRefreshInterval = 200;
+unsigned long staticRefreshTime = 0;
+
 // The wall is 16 discrete 8x8 panels, so the usable virtual coordinates are
 // interrupted by strut gaps -- 2 columns wide but 3 rows tall. These tables map
 // a clean 32x32 chart space onto them, letting the render code below stay
@@ -1319,6 +1329,24 @@ void fireStarter() {
   globalLastTime = currentTime;
 }
 
+/**
+   Re-latch the frame already in the draw buffer, for modes that only redraw when
+   their data changes.
+
+   Nothing is recalculated here -- leds.show() just retransmits what is already
+   there. The point is that the LEDs are on a separate supply, so cutting their
+   power loses the frame while the sketch carries on none the wiser. Calling this
+   from the idle path of a static mode means the wall recovers on its own, and
+   keeps doing so when no updates are arriving at all: overnight, at weekends, or
+   any time after the market closes and prices stop changing.
+*/
+void refreshStaticFrame() {
+  if ( (currentTime - staticRefreshTime) >= staticRefreshInterval ) {
+    staticRefreshTime = currentTime;
+    leds.show();
+  }
+}
+
 // Draw one pixel in chart space, letting the lookup tables handle the struts.
 inline void setChartPixel(uint8_t cx, uint8_t cy, uint32_t color) {
   if (cx >= chartWidth || cy >= chartHeight) return;
@@ -1391,8 +1419,10 @@ void stockChart() {
     return;
   }
 
-  // Already on screen and unchanged: leave the panels alone.
+  // Already on screen and unchanged: leave the pixels alone, but keep pushing
+  // the existing frame out so the wall survives the LEDs losing power.
   if ( ! stockDirty ) {
+    refreshStaticFrame();
     return;
   }
   stockDirty = 0;
@@ -1461,8 +1491,10 @@ void spriteShow() {
     return;
   }
 
-  // Still image: leave the panels alone unless something changed.
+  // Still image: leave the pixels alone unless something changed, but keep
+  // pushing the existing frame out in case the LEDs lost power.
   if ( ! spritesDirty ) {
+    refreshStaticFrame();
     return;
   }
   spritesDirty = 0;

@@ -50,12 +50,15 @@ const uint16_t lifeMinSpeed = 80;
 const uint16_t lifeMaxSpeed = 1500;
 byte lifeOrganic = 50;                // 0-100: how much each cell's fade start is staggered.
 uint8_t lifeFadeInterval = 16;        // ~60fps display cadence, held fixed so smoothness doesn't change with speed.
-byte lifeSubStep = 0;                 // Position within the current generation's fade window.
-// The three below are recomputed together by recomputeLifeTiming() whenever
+// The two below are recomputed together by recomputeLifeTiming() whenever
 // lifeSpeed or lifeOrganic changes -- see that function for the derivation.
-byte lifeTotalSlots = 1;              // Sub-steps in one generation, minus one held back for the commit.
-byte lifeStaggerMax = 0;              // Widest per-cell fade start delay, in sub-steps.
-byte lifeSpanSlots = 1;               // Sub-steps every cell's fade actually spans.
+// Both are real milliseconds (not a step count quantized to lifeFadeInterval)
+// so that a per-cell fadeDelay drawn from [0, lifeStaggerMaxMs] has as many
+// distinct possible values as the generation can afford, rather than the
+// handful a coarse step count would allow -- the difference between a smooth
+// ripple and a few cells visibly moving in unison.
+uint16_t lifeStaggerMaxMs = 0;        // Widest per-cell fade start delay.
+uint16_t lifeSpanMs = 1;              // Duration every cell's fade actually spans, once started.
 uint16_t lifeReviveThreshold = 12; // Below this many live cells, gently inject a glider rather than dying out.
 byte fireInitialized = 0;
 byte firePaused = 0;
@@ -1094,25 +1097,25 @@ void seedGlider(uint8_t x, uint8_t y) {
     uint8_t gy = (y + glider[i][1]) % maxHeight;
     allCells[gx][gy].hVal = hVal;
     allCells[gx][gy].nextColor = hsl2rgb(hVal, sVal, lVal);
-    allCells[gx][gy].fadeDelay = random(0, lifeStaggerMax + 1);
+    allCells[gx][gy].fadeDelay = random(0, lifeStaggerMaxMs + 1);
   }
 }
 
-// Derive the per-generation fade schedule from lifeSpeed and lifeOrganic.
-// lifeFadeInterval (the ~60fps display cadence) stays fixed, so smoothness is
-// constant across the whole speed range -- everything else scales instead.
+// Derive the per-generation fade schedule from lifeSpeed and lifeOrganic, in
+// real milliseconds. lifeFadeInterval (the ~60fps display cadence) stays
+// fixed, so redraw cost is constant across the whole speed range -- only the
+// stagger/span split scales.
 //
-// One sub-step is always held back for the commit at the top of the next
-// tick (see lifeStart()): a cell that starts fading at the maximum stagger
-// delay (lifeStaggerMax) still has exactly lifeSpanSlots left to finish in,
-// so every fade completes inside its own generation by construction, at any
-// speed, rather than by clamping a fixed step count against the clock.
+// One display tick's worth of time is always held back for the commit at the
+// top of the next generation (see lifeStart()): a cell that starts fading at
+// the maximum stagger delay (lifeStaggerMaxMs) still has exactly lifeSpanMs
+// left to finish in, so every fade completes inside its own generation by
+// construction, at any speed, rather than by clamping against the clock.
 void recomputeLifeTiming() {
-  uint16_t slots = lifeSpeed / lifeFadeInterval;
-  lifeTotalSlots = (slots > 1) ? (byte)(slots - 1) : 1;
-  lifeStaggerMax = (byte)( ( (uint32_t) lifeTotalSlots * 6 / 10 ) * lifeOrganic / 100 );
-  lifeSpanSlots = lifeTotalSlots - lifeStaggerMax;
-  if ( lifeSpanSlots < 1 ) lifeSpanSlots = 1;
+  uint16_t totalMs = (lifeSpeed > lifeFadeInterval) ? (lifeSpeed - lifeFadeInterval) : lifeFadeInterval;
+  lifeStaggerMaxMs = (uint16_t)( ( (uint32_t) totalMs * 6 / 10 ) * lifeOrganic / 100 );
+  lifeSpanMs = totalMs - lifeStaggerMaxMs;
+  if ( lifeSpanMs < lifeFadeInterval ) lifeSpanMs = lifeFadeInterval;
 }
 
 // Integer quadratic easing for Life's per-cell fade -- no floats, no fmod, no
@@ -1143,7 +1146,6 @@ void lifeStart() {
   if ( ! lifeInitialized ) {
     oneColor(0);
     recomputeLifeTiming();
-    lifeSubStep = 0;
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
         // Gap (strut) cells are seeded and simulated like any other cell; they
@@ -1201,7 +1203,7 @@ void lifeStart() {
         if ( allCells[w][h].currentColor && neighborCount < 2 ) {
           // Cell dies with less than 2 neighbors.
           allCells[w][h].nextColor = 0;
-          allCells[w][h].fadeDelay = random(0, lifeStaggerMax + 1);
+          allCells[w][h].fadeDelay = random(0, lifeStaggerMaxMs + 1);
         } else if ( allCells[w][h].currentColor && ( neighborCount == 2 || neighborCount == 3 ) ) {
           // Cell continues living if 2 or 3 neighbors. Keep same color (no mutation).
           allCells[w][h].nextColor = allCells[w][h].currentColor;
@@ -1209,17 +1211,17 @@ void lifeStart() {
         } else if ( allCells[w][h].currentColor && neighborCount > 3 ) {
           // Cell dies if more than 3 neighbors.
           allCells[w][h].nextColor = 0;
-          allCells[w][h].fadeDelay = random(0, lifeStaggerMax + 1);
+          allCells[w][h].fadeDelay = random(0, lifeStaggerMaxMs + 1);
         } else if ( ! allCells[w][h].currentColor && neighborCount == 3 ) { // 3 || 6 = high life.
           // New life spawns if exactly 3 neighbors.
           currentLifeCount++;
           allCells[w][h].nextColor = hsl2rgb(allCells[w][h].hVal, sVal, lVal);
-          allCells[w][h].fadeDelay = random(0, lifeStaggerMax + 1);
+          allCells[w][h].fadeDelay = random(0, lifeStaggerMaxMs + 1);
         } else if ( ! allCells[w][h].currentColor && neighborCount > 0 && ( random(1, 101) > 99 ) ) {
           // Chance of spontaneous life to keep from going stagnant.
           currentLifeCount++;
           allCells[w][h].nextColor = hsl2rgb(allCells[w][h].hVal, sVal, lVal);
-          allCells[w][h].fadeDelay = random(0, lifeStaggerMax + 1);
+          allCells[w][h].fadeDelay = random(0, lifeStaggerMaxMs + 1);
         }
       }
     }
@@ -1242,14 +1244,11 @@ void lifeStart() {
           allCells[w][h].hVal = hVal;
           if ( ! allCells[w][h].currentColor && random(1, 101) > 80 ) {
             allCells[w][h].nextColor = hsl2rgb(hVal, sVal, lVal);
-            allCells[w][h].fadeDelay = random(0, lifeStaggerMax + 1);
+            allCells[w][h].fadeDelay = random(0, lifeStaggerMaxMs + 1);
           }
         }
       }
     }
-
-    // Restart the fade schedule for the generation just computed above.
-    lifeSubStep = 0;
   }
 
   // Fade every cell toward the next generation, at a constant ~60fps display
@@ -1269,18 +1268,24 @@ void lifeStart() {
         }
 
         // Cells start fading at their own moment within the generation --
-        // fadeDelay, drawn from [0, lifeStaggerMax] when the transition was
+        // fadeDelay, drawn from [0, lifeStaggerMaxMs] when the transition was
         // assigned above -- so births and deaths ripple across the board
-        // instead of landing in lockstep. Every cell shares lifeSpanSlots, so
-        // a cell starting at the maximum delay still finishes exactly when
-        // the generation's fade window closes.
+        // instead of landing in lockstep. The delay is a real millisecond
+        // offset rather than a count of lifeFadeInterval-sized steps, so
+        // there are as many distinct start times as the generation can
+        // afford instead of only a handful -- with few enough steps, most of
+        // the cells changing in a generation would land on the same one and
+        // move as a visible clump rather than a spread-out ripple. Every cell
+        // shares lifeSpanMs, so a cell starting at the maximum delay still
+        // finishes exactly when the generation's fade window closes.
+        uint16_t elapsedMs = (uint16_t)( currentTime - lifeLastTime );
         uint8_t t;
-        if ( lifeSubStep <= thisCell.fadeDelay ) {
+        if ( elapsedMs <= thisCell.fadeDelay ) {
           t = 0;
         } else {
-          uint16_t progress = lifeSubStep - thisCell.fadeDelay;
-          if ( progress > lifeSpanSlots ) progress = lifeSpanSlots;
-          t = (uint8_t)( ( (uint16_t) progress * 255 ) / lifeSpanSlots );
+          uint16_t progressMs = elapsedMs - thisCell.fadeDelay;
+          if ( progressMs > lifeSpanMs ) progressMs = lifeSpanMs;
+          t = (uint8_t)( ( (uint32_t) progressMs * 255 ) / lifeSpanMs );
         }
 
         // A cell fading here always has exactly one of currentColor/nextColor
@@ -1306,7 +1311,6 @@ void lifeStart() {
         setPixelSafe( remapXY(w, h), makeColor( rTemp, gTemp, bTemp ) );
       }
     }
-    if ( lifeSubStep < lifeTotalSlots ) lifeSubStep++;
   }
 
   leds.show();

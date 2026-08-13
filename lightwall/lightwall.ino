@@ -1113,33 +1113,36 @@ void seedGlider(uint8_t x, uint8_t y) {
 // construction, at any speed, rather than by clamping against the clock.
 void recomputeLifeTiming() {
   uint16_t totalMs = (lifeSpeed > lifeFadeInterval) ? (lifeSpeed - lifeFadeInterval) : lifeFadeInterval;
-  // Up to 85% of the generation can go to stagger rather than 60% -- more of
-  // the budget spent spreading start times, less on each individual cell's
-  // own fade. The floor below can now clip a cell's span slightly (worst
-  // case ~6ms past totalMs at the extremes), but totalMs already reserves a
-  // full lifeFadeInterval of margin before the next commit actually fires,
-  // so that clip never reaches it.
-  lifeStaggerMaxMs = (uint16_t)( ( (uint32_t) totalMs * 85 / 100 ) * lifeOrganic / 100 );
+  // Up to 60% of the generation can go to stagger -- spreading start times
+  // wider than that starts eating into each cell's own fade span faster than
+  // it buys visible spread, and that span is what makes Organic feel gentle
+  // rather than snappy. The floor below can still clip a cell's span
+  // slightly (worst case ~6ms past totalMs at the extremes), but totalMs
+  // already reserves a full lifeFadeInterval of margin before the next
+  // commit actually fires, so that clip never reaches it.
+  lifeStaggerMaxMs = (uint16_t)( ( (uint32_t) totalMs * 6 / 10 ) * lifeOrganic / 100 );
   lifeSpanMs = totalMs - lifeStaggerMaxMs;
   if ( lifeSpanMs < lifeFadeInterval ) lifeSpanMs = lifeFadeInterval;
 }
 
-// Integer quadratic easing for Life's per-cell fade -- no floats, no fmod, no
-// lookup table; a Cortex-M4 divide is a few cycles and ~1558 cells at 60fps is
-// well inside budget. Birth rises fast and eases into full brightness, a
-// bloom. Death drops fast and then crawls the last stretch to black, an
-// ember: the eye is roughly logarithmic, so a constant step in linear PWM
-// only looks harsh down at the low end (the same reasoning behind
-// fadeTailColor()'s EASE_KNEE above), and a quadratic spends more of its
-// travel there instead of snapping off at the bottom.
+// Integer easing for Life's per-cell fade -- no floats, no fmod, no lookup
+// table; a Cortex-M4 divide is a few cycles and ~1558 cells at 60fps is well
+// inside budget. Birth rises fast and eases into full brightness, a bloom,
+// with a quadratic. Death drops fast and then crawls the last stretch to
+// black, an ember: the eye is roughly logarithmic, so a constant step in
+// linear PWM only looks harsh down at the low end (the same reasoning behind
+// fadeTailColor()'s EASE_KNEE above). Death uses a cubic rather than birth's
+// quadratic so it spends noticeably more of its travel lingering at low
+// brightness instead of snapping off at the bottom -- that lingering low end
+// is the ember.
 uint8_t easeLifeBirth(uint8_t t) {
   uint16_t inv = 255 - t;
   return 255 - (uint8_t)( (inv * inv) / 255 );
 }
 
 uint8_t easeLifeDeath(uint8_t t) {
-  uint16_t inv = 255 - t;
-  return (uint8_t)( (inv * inv) / 255 );
+  uint32_t inv = 255 - t;
+  return (uint8_t)( (inv * inv * inv) / 65025UL ); // 255^2, so the result still lands in 0..255
 }
 
 void lifeStart() {

@@ -1113,7 +1113,13 @@ void seedGlider(uint8_t x, uint8_t y) {
 // construction, at any speed, rather than by clamping against the clock.
 void recomputeLifeTiming() {
   uint16_t totalMs = (lifeSpeed > lifeFadeInterval) ? (lifeSpeed - lifeFadeInterval) : lifeFadeInterval;
-  lifeStaggerMaxMs = (uint16_t)( ( (uint32_t) totalMs * 6 / 10 ) * lifeOrganic / 100 );
+  // Up to 85% of the generation can go to stagger rather than 60% -- more of
+  // the budget spent spreading start times, less on each individual cell's
+  // own fade. The floor below can now clip a cell's span slightly (worst
+  // case ~6ms past totalMs at the extremes), but totalMs already reserves a
+  // full lifeFadeInterval of margin before the next commit actually fires,
+  // so that clip never reaches it.
+  lifeStaggerMaxMs = (uint16_t)( ( (uint32_t) totalMs * 85 / 100 ) * lifeOrganic / 100 );
   lifeSpanMs = totalMs - lifeStaggerMaxMs;
   if ( lifeSpanMs < lifeFadeInterval ) lifeSpanMs = lifeFadeInterval;
 }

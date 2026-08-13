@@ -60,6 +60,20 @@ uint8_t lifeFadeInterval = 16;        // ~60fps display cadence, held fixed so s
 uint16_t lifeStaggerMaxMs = 0;        // Widest per-cell fade start delay.
 uint16_t lifeSpanMs = 1;              // Duration every cell's fade actually spans, once started.
 uint16_t lifeReviveThreshold = 12; // Below this many live cells, gently inject a glider rather than dying out.
+
+// A minority of deaths leave a faint, slowly-decaying ember behind instead of
+// going straight to black -- a cell that stays barely lit while the colony
+// moves on around it. Deliberately stores no per-cell state (see cell.h's
+// zero-padding-slack comment: one more byte per cell would cost 6.2KB across
+// 1558 cells) -- see lifeCellEmbers() below for how membership is decided
+// without a stored flag, and the ember decay pass in lifeStart() for how the
+// glow is carried entirely in the LED framebuffer instead.
+const uint8_t lifeEmberChance   = 25;  // Percent of deaths that leave an ember behind.
+const uint8_t lifeEmberLevel    = 40;  // 0-255 brightness an ember holds at when its death fade lands.
+const uint8_t lifeEmberDim      = 1;   // Brightness steps removed per ember decay tick.
+const uint8_t lifeEmberInterval = 60;  // ms between ember decay ticks -- independent of lifeSpeed.
+uint16_t lifeGeneration = 0;            // Bumped once per commit; mixed into lifeCellEmbers() so membership varies generation to generation.
+unsigned long lifeEmberLastTime = 0;   // Ember decay clock, independent of lifeLastTime/lifeFadeLastTime.
 byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
@@ -1109,8 +1123,14 @@ void seedGlider(uint8_t x, uint8_t y) {
 // One display tick's worth of time is always held back for the commit at the
 // top of the next generation (see lifeStart()): a cell that starts fading at
 // the maximum stagger delay (lifeStaggerMaxMs) still has exactly lifeSpanMs
-// left to finish in, so every fade completes inside its own generation by
-// construction, at any speed, rather than by clamping against the clock.
+// left to finish in, so every fade normally completes inside its own
+// generation by construction, at any speed, rather than by clamping against
+// the clock. "Normally" -- that held-back tick is a fixed margin, and a
+// stall elsewhere in loop() can still eat it; the finalize step at the top
+// of lifeStart()'s commit block is what actually guarantees a cell's
+// resting value gets drawn regardless, so this margin only has to be good
+// enough that fades look complete on their own most of the time, not
+// perfect under worst-case jitter.
 void recomputeLifeTiming() {
   uint16_t totalMs = (lifeSpeed > lifeFadeInterval) ? (lifeSpeed - lifeFadeInterval) : lifeFadeInterval;
   // Up to 60% of the generation can go to stagger -- spreading start times
@@ -1128,13 +1148,15 @@ void recomputeLifeTiming() {
 // Integer easing for Life's per-cell fade -- no floats, no fmod, no lookup
 // table; a Cortex-M4 divide is a few cycles and ~1558 cells at 60fps is well
 // inside budget. Birth rises fast and eases into full brightness, a bloom,
-// with a quadratic. Death drops fast and then crawls the last stretch to
-// black, an ember: the eye is roughly logarithmic, so a constant step in
+// with a quadratic. Death drops fast and then crawls the last stretch toward
+// black with a cubic: the eye is roughly logarithmic, so a constant step in
 // linear PWM only looks harsh down at the low end (the same reasoning behind
-// fadeTailColor()'s EASE_KNEE above). Death uses a cubic rather than birth's
-// quadratic so it spends noticeably more of its travel lingering at low
-// brightness instead of snapping off at the bottom -- that lingering low end
-// is the ember.
+// fadeTailColor()'s EASE_KNEE above), and the cubic spends noticeably more of
+// its travel lingering at low brightness than birth's quadratic does. This is
+// the dying tail of a single fade, not the persistent ember below -- an
+// ember-selected cell's death floors this curve partway down (see the fade
+// loop in lifeStart()) and hands off to its own decay clock instead of
+// riding this curve down to true black.
 uint8_t easeLifeBirth(uint8_t t) {
   uint16_t inv = 255 - t;
   return 255 - (uint8_t)( (inv * inv) / 255 );
@@ -1143,6 +1165,27 @@ uint8_t easeLifeBirth(uint8_t t) {
 uint8_t easeLifeDeath(uint8_t t) {
   uint32_t inv = 255 - t;
   return (uint8_t)( (inv * inv * inv) / 65025UL ); // 255^2, so the result still lands in 0..255
+}
+
+// Whether (w, h) is one of the lifeEmberChance% of cells whose death, in the
+// generation currently finishing, leaves an ember rather than going straight
+// to black. A hash rather than a stored per-cell flag -- cell.h's struct is
+// exactly 12 bytes with no padding slack, so any new field costs 4 padded
+// bytes x 1558 cells. Mixing lifeGeneration in means the same cell isn't
+// perpetually ember-eligible or perpetually not; the multiply/xor/shift mix
+// (not a bare sum) keeps the selection free of the diagonal/periodic stripes
+// a simpler hash of adjacent grid coordinates would produce. Called from both
+// the commit block (to seed an ember) and the per-frame fade loop (to floor
+// that cell's fade at lifeEmberLevel instead of easeLifeDeath's 0), which
+// must agree on membership for as long as that generation's fade is playing
+// out -- lifeGeneration is bumped only once, after the commit block finishes
+// with the generation being finalized.
+bool lifeCellEmbers(uint8_t w, uint8_t h) {
+  uint32_t x = ( (uint32_t) lifeGeneration * 2654435761UL ) ^ ( (uint32_t) w * 40503UL ) ^ ( (uint32_t) h * 2246822519UL );
+  x ^= x >> 15;
+  x *= 2246822519UL;
+  x ^= x >> 13;
+  return ( x % 100 ) < lifeEmberChance;
 }
 
 void lifeStart() {
@@ -1193,11 +1236,46 @@ void lifeStart() {
   // lifeLastTime >= lifeSpeed": at a fast enough lifeSpeed that second clause
   // could fire before the fade had run all its steps, truncating a
   // transition mid-flight. Committing here instead means the fade drawn
-  // below is always for the generation computed on the *previous* pass
+  // below is *usually* for the generation computed on the previous pass
   // through this block, which -- by construction, see recomputeLifeTiming()
-  // -- always finishes fading before this commit runs again, at any speed.
+  // -- normally finishes fading before this commit runs again, at any speed.
+  // "Usually" and "normally": that margin is a fixed lifeFadeInterval
+  // (~16ms), a large fraction of a fast generation and a tiny one of a slow
+  // one, and a stall elsewhere in loop() can still eat it -- the finalize
+  // step immediately below exists because relying on the fade loop alone to
+  // have already written a cell's resting value was exactly that gap: a
+  // stall spanning a generation boundary could leave a pixel frozen
+  // mid-fade forever once currentColor/nextColor became equal below and the
+  // fade loop's "nothing changed" skip took over.
   if ( currentTime - lifeLastTime >= lifeSpeed ) {
     lifeLastTime = currentTime;
+
+    // Finalize the fade that just finished, before committing to the next
+    // generation -- snap every transitioning cell to its true resting value
+    // rather than trusting that the fade loop already drew it. A birth
+    // resolves to nextColor exactly. A death resolves to true black, unless
+    // lifeCellEmbers() selects this cell as one of lifeEmberChance% that
+    // instead holds at lifeEmberLevel and hands off to the ember decay pass
+    // near the bottom of this function, which fades it out on its own clock.
+    for ( byte w = 0; w < maxWidth; w++) {
+      for ( byte h = 0; h < maxHeight; h++) {
+        cell &thisCell = allCells[w][h];
+        if ( thisCell.currentColor == thisCell.nextColor ) {
+          continue;
+        }
+        uint16_t pixel = remapXY(w, h);
+        if ( thisCell.nextColor != 0 ) {
+          setPixelSafe( pixel, thisCell.nextColor );
+        } else if ( lifeCellEmbers(w, h) ) {
+          uint8_t rTemp = (uint8_t)( ( (uint16_t) red(thisCell.currentColor)   * lifeEmberLevel ) / 255 );
+          uint8_t gTemp = (uint8_t)( ( (uint16_t) green(thisCell.currentColor) * lifeEmberLevel ) / 255 );
+          uint8_t bTemp = (uint8_t)( ( (uint16_t) blue(thisCell.currentColor)  * lifeEmberLevel ) / 255 );
+          setPixelSafe( pixel, makeColor( rTemp, gTemp, bTemp ) );
+        } else {
+          setPixelSafe( pixel, 0 );
+        }
+      }
+    }
 
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
@@ -1258,6 +1336,12 @@ void lifeStart() {
         }
       }
     }
+
+    // Advance last, so lifeCellEmbers() still answers for the generation the
+    // finalize step above just resolved, and only starts answering for the
+    // new one once this generation's fadeDelay/nextColor targets (assigned
+    // above) are the ones about to animate.
+    lifeGeneration++;
   }
 
   // Fade every cell toward the next generation, at a constant ~60fps display
@@ -1305,19 +1389,71 @@ void lifeStart() {
         // easeLifeBirth()/easeLifeDeath() above for the two curves.
         uint32_t baseColor;
         uint8_t f;
-        if ( thisCell.currentColor == 0 ) {
+        bool isBirth = ( thisCell.currentColor == 0 );
+        if ( isBirth ) {
           baseColor = thisCell.nextColor;
           f = easeLifeBirth(t);
         } else {
           baseColor = thisCell.currentColor;
           f = easeLifeDeath(t);
+          // This cell is one of the lifeEmberChance% selected to leave an
+          // ember (see lifeCellEmbers() and the finalize step above) --
+          // floor its death here at lifeEmberLevel instead of riding
+          // easeLifeDeath() down to true black, so the fade loop and the
+          // finalize step agree on where this generation's fade actually
+          // lands. The ember decay pass below takes it the rest of the way
+          // to black on its own clock, after this generation commits.
+          if ( f < lifeEmberLevel && lifeCellEmbers(w, h) ) f = lifeEmberLevel;
         }
 
         uint8_t rTemp = (uint8_t)( ( (uint16_t) red(baseColor)   * f ) / 255 );
         uint8_t gTemp = (uint8_t)( ( (uint16_t) green(baseColor) * f ) / 255 );
         uint8_t bTemp = (uint8_t)( ( (uint16_t) blue(baseColor)  * f ) / 255 );
 
-        setPixelSafe( remapXY(w, h), makeColor( rTemp, gTemp, bTemp ) );
+        uint16_t pixel = remapXY(w, h);
+        if ( isBirth && pixel < NUM_LEDS ) {
+          // A cell reborn while its previous death's ember is still glowing
+          // (ember decay pass below) would otherwise have this bloom snap
+          // straight over it, flashing black for a frame first. Taking the
+          // per-channel max against what's already lit lets the bloom
+          // simply overtake the ember instead of replacing it outright.
+          uint32_t existing = leds.getPixel(pixel);
+          if ( red(existing)   > rTemp ) rTemp = red(existing);
+          if ( green(existing) > gTemp ) gTemp = green(existing);
+          if ( blue(existing)  > bTemp ) bTemp = blue(existing);
+        }
+
+        setPixelSafe( pixel, makeColor( rTemp, gTemp, bTemp ) );
+      }
+    }
+  }
+
+  // Ember decay: on its own clock, independent of lifeSpeed and of
+  // lifeFadeInterval, so an ember lingers the same real length of time no
+  // matter how fast Life itself is running. Only cells the fade loop above
+  // is no longer touching (currentColor == nextColor == 0 -- fully dead and
+  // not mid-transition) are eligible, so this never fights the fade loop
+  // over the same pixel. Reads the framebuffer rather than any per-cell
+  // state -- there is nowhere to put per-cell state; see cell.h -- so this
+  // also mops up any pixel a truncated fade left stranded before the
+  // finalize step above existed, not just the embers it seeds on purpose.
+  // fadeTailColor() is the same hue-preserving decay Matrix rain uses for
+  // its tail (see fadeTailColor() above); baseColor is unused here since an
+  // ember always decays all the way to true black (canGoBlack = true).
+  if ( currentTime - lifeEmberLastTime >= lifeEmberInterval ) {
+    lifeEmberLastTime = currentTime;
+    for ( byte w = 0; w < maxWidth; w++) {
+      for ( byte h = 0; h < maxHeight; h++) {
+        cell &thisCell = allCells[w][h];
+        if ( thisCell.currentColor != 0 || thisCell.nextColor != 0 ) {
+          continue;
+        }
+        uint16_t pixel = remapXY(w, h);
+        if ( pixel >= NUM_LEDS ) continue;
+        uint32_t existing = leds.getPixel(pixel);
+        if ( existing != 0 ) {
+          leds.setPixel( pixel, fadeTailColor( existing, 0, lifeEmberDim, true ) );
+        }
       }
     }
   }

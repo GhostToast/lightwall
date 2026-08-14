@@ -151,13 +151,13 @@ const uint16_t fireflySleepMin = 1500;
 const uint16_t fireflySleepFloor = 250;  // Always leave some darkness between
                                           // blinks, or it stops reading as a blink.
 
-// How often a firefly nudges itself one step while HOLD -- the "gentle
-// hover/drift" itself. Deliberately shorter than the repositioning that also
-// happens (invisibly) at each reignite: that one only matters over many
-// cycles field-wide, this one is what actually reads as a single firefly
-// moving on screen while lit.
-const uint16_t fireflyHoverMinMs = 100;
-const uint16_t fireflyHoverMaxMs = 250;
+// The "gentle hover/drift" itself: at most ONE nudge per HOLD cycle, and only
+// fireflyHoverChancePercent of cycles get even that -- most blinks are simply
+// still. A per-tick chance or a fixed short interval both multiply into a
+// blur once fireflyHoldMs is long or many fireflies are lit at once (high
+// Frequency); capping it at one occasional, rare step keeps the movement
+// pleasant and peaceful rather than a constant tremor across the field.
+const uint8_t fireflyHoverChancePercent = 35;
 
 // Derived by recomputeFireflyTiming(), same contract as recomputeLifeTiming().
 uint16_t fireflyOnMs = 1700;          // 2 * fade + hold.
@@ -803,20 +803,32 @@ void processFirefliesTiming(char * strtokIndex) {
   if ( requestedVariation > 100 ) requestedVariation = 100;
   fireflyHueVariation = requestedVariation;
 
+  uint16_t oldSleepLow = fireflySleepLow;
+  uint16_t oldSleepHigh = fireflySleepHigh;
   recomputeFireflyTiming();
 
   // Without this, a firefly already sitting in the dark phase keeps waiting
   // out the sleepMs it rolled under the *old* frequency -- which at a low
   // frequency can be tens of seconds -- so dragging the slider would look
   // like it did nothing until each firefly happened to cycle through on its
-  // own. Rerolling every currently-dark firefly against the freshly computed
-  // window makes the change take effect across the field immediately. Lit
-  // fireflies (fading in, holding, fading out) are untouched -- only the dark
-  // dwell is driven by frequency.
+  // own. But resetting every dark firefly's clock to the same instant (an
+  // earlier version of this did exactly that) resynchronizes the whole dark
+  // population onto one shared countdown -- it reads as the whole field
+  // switching on and off together, "upon changing any timing slider," rather
+  // than independently. Scaling each firefly's own remaining target by how
+  // much the average sleep window just changed makes the new frequency felt
+  // immediately while leaving each firefly's own elapsed progress (and so its
+  // stagger relative to every other firefly) untouched. When only fade/hold/
+  // variation changed, oldMid == newMid and this is a no-op.
+  uint32_t oldMid = (uint32_t) oldSleepLow + oldSleepHigh;
+  uint32_t newMid = (uint32_t) fireflySleepLow + fireflySleepHigh;
+  if ( oldMid == 0 ) oldMid = 1;
+  // uint64_t, not uint32_t: sleepMs and newMid can each be tens of thousands,
+  // and their product can exceed 4.29 billion (uint32_t's ceiling) at the low
+  // end of the Frequency range.
   for ( uint8_t i = 0; i < FIREFLY_COUNT; i++ ) {
     if ( FIREFLY_DARK == allFireflies[i].phase ) {
-      allFireflies[i].sleepMs = random( fireflySleepLow, fireflySleepHigh );
-      allFireflies[i].phaseStart = currentTime;
+      allFireflies[i].sleepMs = (uint16_t)( ( (uint64_t) allFireflies[i].sleepMs * newMid ) / oldMid );
     }
   }
 }
@@ -1874,7 +1886,21 @@ void fireflyStart() {
         if ( elapsed >= fireflyFadeMs ) {
           f.phase = FIREFLY_HOLD;
           f.phaseStart = currentTime;
-          f.nextHoverTime = currentTime + random(fireflyHoverMinMs, fireflyHoverMaxMs + 1);
+          // At most one hover this cycle, and only fireflyHoverChancePercent
+          // of cycles get even that -- scheduled somewhere in the middle 40%
+          // of the hold (not right at ignition, not right before fade-out).
+          // Missing the roll (or holdMs being 0, a legal pure-pulse) sets
+          // nextHoverTime past the end of the hold, which is the same as
+          // never, since the elapsed >= fireflyHoldMs check above always
+          // fires first.
+          if ( fireflyHoldMs > 0 && random(1, 101) <= fireflyHoverChancePercent ) {
+            uint16_t hoverWindowStart = (uint16_t)( (uint32_t) fireflyHoldMs * 3 / 10 );
+            uint16_t hoverWindowEnd   = (uint16_t)( (uint32_t) fireflyHoldMs * 7 / 10 );
+            if ( hoverWindowEnd <= hoverWindowStart ) hoverWindowEnd = hoverWindowStart + 1;
+            f.nextHoverTime = currentTime + random(hoverWindowStart, hoverWindowEnd);
+          } else {
+            f.nextHoverTime = currentTime + fireflyHoldMs + 1;
+          }
         }
         break;
 
@@ -1893,7 +1919,9 @@ void fireflyStart() {
           setPixelSafe( remapXY( chartCol[f.x], chartRow[f.y] ), 0 );
           f.x = fireflyStep(f.x);
           f.y = fireflyStep(f.y);
-          f.nextHoverTime = currentTime + random(fireflyHoverMinMs, fireflyHoverMaxMs + 1);
+          // Consumed: push past the end of this hold so it cannot fire again
+          // this cycle. The next FADE_IN->HOLD transition rolls a fresh one.
+          f.nextHoverTime = currentTime + fireflyHoldMs + 1;
         }
         break;
 

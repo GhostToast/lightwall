@@ -72,7 +72,7 @@ uint16_t lifeReviveThreshold = 12; // Below this many live cells, gently inject 
 // stored flag; the glow itself is carried entirely in the LED framebuffer,
 // which nothing touches again for that pixel until that cell is reborn.
 byte lifeEmberChance            = 25;  // 0-100: percent of deaths that leave a persistent ember behind; UI-adjustable, see processLifeTiming().
-const uint8_t lifeEmberLevel    = 40;  // 0-255 brightness an ember holds at when its death fade lands.
+const uint8_t lifeEmberLevel    = 15;  // 0-255 brightness an ember holds at when its death fade lands -- kept low for contrast against live cells, especially at low L.
 uint16_t lifeGeneration = 0;            // Bumped once per commit; mixed into lifeCellEmbers() so membership varies generation to generation.
 byte fireInitialized = 0;
 byte firePaused = 0;
@@ -1278,8 +1278,8 @@ void lifeStart() {
     // rather than trusting that the fade loop already drew it. A birth
     // resolves to nextColor exactly. A death resolves to true black, unless
     // lifeCellEmbers() selects this cell as one of lifeEmberChance% that
-    // instead holds at lifeEmberLevel and hands off to the ember decay pass
-    // near the bottom of this function, which fades it out on its own clock.
+    // instead holds at lifeEmberLevel indefinitely, until a birth overtakes
+    // this pixel (see the isBirth blend in the fade loop below).
     for ( byte w = 0; w < maxWidth; w++) {
       for ( byte h = 0; h < maxHeight; h++) {
         cell &thisCell = allCells[w][h];
@@ -1533,12 +1533,16 @@ uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
 
     // lifeColorMutation widens how far a new cell's hue can wander from its
     // chosen parent's -- 1 degree at 0 (the original subtle drift, kept
-    // byte-identical) up to maxMutationDegrees at 100. Same gene-blend
+    // byte-identical) up to a capped ceiling at 100. Same gene-blend
     // mechanism throughout, just a wider dice roll, rather than swapping to
     // an unrelated "big leap" mode -- that read as pure random noise instead
-    // of a heritable trait.
+    // of a heritable trait. The slider's full 0-100 range only spends
+    // mutationSliderCeilingPercent of maxMutationDegrees's total range --
+    // past that point in testing read as too wild, so 100 on the slider now
+    // lands where ~75 used to.
     const uint8_t maxMutationDegrees = 25;
-    uint8_t maxGeneIndex = 1 + ( (uint16_t) lifeColorMutation * (maxMutationDegrees - 1) / 100 );
+    const uint8_t mutationSliderCeilingPercent = 75;
+    uint8_t maxGeneIndex = 1 + (uint8_t)( (uint32_t) lifeColorMutation * (maxMutationDegrees - 1) * mutationSliderCeilingPercent / 10000 );
     uint8_t geneIndex = random(0, maxGeneIndex + 1);
     byte geneDirection = random(1, 100);
 

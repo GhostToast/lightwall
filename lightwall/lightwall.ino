@@ -49,7 +49,7 @@ uint16_t lifeSpeed = 370;             // Milliseconds per generation; UI-adjusta
 const uint16_t lifeMinSpeed = 80;
 const uint16_t lifeMaxSpeed = 1500;
 byte lifeOrganic = 50;                // 0-100: how much each cell's fade start is staggered.
-byte lifeColorMutation = 0;           // 0-100: percent chance a new cell's hue leaps far from its "parent" instead of nearly matching it -- see getNeighborCount().
+byte lifeColorMutation = 0;           // 0-100: widens how far a new cell's hue can drift from its "parent"'s -- see getNeighborCount().
 uint8_t lifeFadeInterval = 16;        // ~60fps display cadence, held fixed so smoothness doesn't change with speed.
 // The two below are recomputed together by recomputeLifeTiming() whenever
 // lifeSpeed or lifeOrganic changes -- see that function for the derivation.
@@ -62,19 +62,18 @@ uint16_t lifeStaggerMaxMs = 0;        // Widest per-cell fade start delay.
 uint16_t lifeTotalMs = 1;             // Full per-generation time budget (after the display-tick margin); each cell's own fade span is lifeTotalMs minus its own fadeDelay, computed per-cell in the fade loop -- see lifeStart().
 uint16_t lifeReviveThreshold = 12; // Below this many live cells, gently inject a glider rather than dying out.
 
-// A minority of deaths leave a faint, slowly-decaying ember behind instead of
-// going straight to black -- a cell that stays barely lit while the colony
-// moves on around it. Deliberately stores no per-cell state (see cell.h's
-// zero-padding-slack comment: one more byte per cell would cost 6.2KB across
-// 1558 cells) -- see lifeCellEmbers() below for how membership is decided
-// without a stored flag, and the ember decay pass in lifeStart() for how the
-// glow is carried entirely in the LED framebuffer instead.
-byte lifeEmberChance            = 25;  // 0-100: percent of deaths that leave an ember behind; UI-adjustable, see processLifeTiming().
+// A minority of deaths leave a faint ember behind instead of going straight
+// to black -- a cell that stays barely lit while the colony moves on around
+// it. The ember persists indefinitely (no decay) until a birth lands on that
+// same cell and overtakes it -- see the isBirth blend in lifeStart()'s fade
+// loop. Deliberately stores no per-cell state (see cell.h's zero-padding-
+// slack comment: one more byte per cell would cost 6.2KB across 1558 cells)
+// -- see lifeCellEmbers() below for how membership is decided without a
+// stored flag; the glow itself is carried entirely in the LED framebuffer,
+// which nothing touches again for that pixel until that cell is reborn.
+byte lifeEmberChance            = 25;  // 0-100: percent of deaths that leave a persistent ember behind; UI-adjustable, see processLifeTiming().
 const uint8_t lifeEmberLevel    = 40;  // 0-255 brightness an ember holds at when its death fade lands.
-const uint8_t lifeEmberDim      = 1;   // Brightness steps removed per ember decay tick.
-const uint8_t lifeEmberInterval = 60;  // ms between ember decay ticks -- independent of lifeSpeed.
 uint16_t lifeGeneration = 0;            // Bumped once per commit; mixed into lifeCellEmbers() so membership varies generation to generation.
-unsigned long lifeEmberLastTime = 0;   // Ember decay clock, independent of lifeLastTime/lifeFadeLastTime.
 byte fireInitialized = 0;
 byte firePaused = 0;
 byte fireSpeed = 80;
@@ -1446,8 +1445,8 @@ void lifeStart() {
 
         uint16_t pixel = remapXY(w, h);
         if ( isBirth && pixel < NUM_LEDS ) {
-          // A cell reborn while its previous death's ember is still glowing
-          // (ember decay pass below) would otherwise have this bloom snap
+          // A cell reborn on a cell whose previous death left a persistent
+          // ember still glowing would otherwise have this bloom snap
           // straight over it, flashing black for a frame first. Taking the
           // per-channel max against what's already lit lets the bloom
           // simply overtake the ember instead of replacing it outright.
@@ -1458,36 +1457,6 @@ void lifeStart() {
         }
 
         setPixelSafe( pixel, makeColor( rTemp, gTemp, bTemp ) );
-      }
-    }
-  }
-
-  // Ember decay: on its own clock, independent of lifeSpeed and of
-  // lifeFadeInterval, so an ember lingers the same real length of time no
-  // matter how fast Life itself is running. Only cells the fade loop above
-  // is no longer touching (currentColor == nextColor == 0 -- fully dead and
-  // not mid-transition) are eligible, so this never fights the fade loop
-  // over the same pixel. Reads the framebuffer rather than any per-cell
-  // state -- there is nowhere to put per-cell state; see cell.h -- so this
-  // also mops up any pixel a truncated fade left stranded before the
-  // finalize step above existed, not just the embers it seeds on purpose.
-  // fadeTailColor() is the same hue-preserving decay Matrix rain uses for
-  // its tail (see fadeTailColor() above); baseColor is unused here since an
-  // ember always decays all the way to true black (canGoBlack = true).
-  if ( currentTime - lifeEmberLastTime >= lifeEmberInterval ) {
-    lifeEmberLastTime = currentTime;
-    for ( byte w = 0; w < maxWidth; w++) {
-      for ( byte h = 0; h < maxHeight; h++) {
-        cell &thisCell = allCells[w][h];
-        if ( thisCell.currentColor != 0 || thisCell.nextColor != 0 ) {
-          continue;
-        }
-        uint16_t pixel = remapXY(w, h);
-        if ( pixel >= NUM_LEDS ) continue;
-        uint32_t existing = leds.getPixel(pixel);
-        if ( existing != 0 ) {
-          leds.setPixel( pixel, fadeTailColor( existing, 0, lifeEmberDim, true ) );
-        }
       }
     }
   }
@@ -1562,23 +1531,24 @@ uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
     byte parentIndex = random(0, count);
     uint16_t tempHVal = 0;
 
-    if ( lifeColorMutation > 0 && random(1, 101) <= lifeColorMutation ) {
-      // Genetic leap: hue lands 30-150 degrees from the parent's, in a
-      // random direction around the wheel, instead of the near-exact
-      // inheritance below -- lifeColorMutation is the odds any given new
-      // life takes this leap rather than closely resembling its parent.
-      uint16_t hueJump = random(30, 151);
-      if ( random(0, 2) ) hueJump = 360 - hueJump;
-      tempHVal = (parents[parentIndex] + hueJump) % 360;
-    } else {
-      uint8_t geneIndex = random(0, 2);
-      byte geneDirection = random(1, 100);
+    // lifeColorMutation widens how far a new cell's hue can wander from its
+    // chosen parent's -- 1 degree at 0 (the original subtle drift, kept
+    // byte-identical) up to maxMutationDegrees at 100. Same gene-blend
+    // mechanism throughout, just a wider dice roll, rather than swapping to
+    // an unrelated "big leap" mode -- that read as pure random noise instead
+    // of a heritable trait.
+    const uint8_t maxMutationDegrees = 25;
+    uint8_t maxGeneIndex = 1 + ( (uint16_t) lifeColorMutation * (maxMutationDegrees - 1) / 100 );
+    uint8_t geneIndex = random(0, maxGeneIndex + 1);
+    byte geneDirection = random(1, 100);
 
-      if ( geneDirection % 2) { // Even or odd
-        tempHVal = fmod(parents[parentIndex] + geneIndex, 360);
-      } else {
-        tempHVal = fmod(parents[parentIndex] - geneIndex, 360);
-      }
+    if ( geneDirection % 2) { // Even or odd
+      tempHVal = (parents[parentIndex] + geneIndex) % 360;
+    } else {
+      // +360 before subtracting keeps this unsigned-safe when geneIndex
+      // exceeds the parent's hue -- the old fmod() version could go negative
+      // there and wrap to a huge uint16_t instead of a small hue.
+      tempHVal = (parents[parentIndex] + 360 - geneIndex) % 360;
     }
 
     allCells[x][y].hVal = tempHVal;

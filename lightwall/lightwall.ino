@@ -58,7 +58,7 @@ uint8_t lifeFadeInterval = 16;        // ~60fps display cadence, held fixed so s
 // handful a coarse step count would allow -- the difference between a smooth
 // ripple and a few cells visibly moving in unison.
 uint16_t lifeStaggerMaxMs = 0;        // Widest per-cell fade start delay.
-uint16_t lifeSpanMs = 1;              // Duration every cell's fade actually spans, once started.
+uint16_t lifeTotalMs = 1;             // Full per-generation time budget (after the display-tick margin); each cell's own fade span is lifeTotalMs minus its own fadeDelay, computed per-cell in the fade loop -- see lifeStart().
 uint16_t lifeReviveThreshold = 12; // Below this many live cells, gently inject a glider rather than dying out.
 
 // A minority of deaths leave a faint, slowly-decaying ember behind instead of
@@ -1117,32 +1117,35 @@ void seedGlider(uint8_t x, uint8_t y) {
 
 // Derive the per-generation fade schedule from lifeSpeed and lifeOrganic, in
 // real milliseconds. lifeFadeInterval (the ~60fps display cadence) stays
-// fixed, so redraw cost is constant across the whole speed range -- only the
-// stagger/span split scales.
+// fixed, so redraw cost is constant across the whole speed range -- only
+// lifeStaggerMaxMs (how widely start times spread) and lifeTotalMs (the
+// budget those start times spread across) scale.
 //
 // One display tick's worth of time is always held back for the commit at the
-// top of the next generation (see lifeStart()): a cell that starts fading at
-// the maximum stagger delay (lifeStaggerMaxMs) still has exactly lifeSpanMs
-// left to finish in, so every fade normally completes inside its own
-// generation by construction, at any speed, rather than by clamping against
-// the clock. "Normally" -- that held-back tick is a fixed margin, and a
-// stall elsewhere in loop() can still eat it; the finalize step at the top
-// of lifeStart()'s commit block is what actually guarantees a cell's
-// resting value gets drawn regardless, so this margin only has to be good
-// enough that fades look complete on their own most of the time, not
-// perfect under worst-case jitter.
+// top of the next generation (see lifeStart()): a cell's own fade span is
+// computed there, per cell, as lifeTotalMs minus that cell's own fadeDelay --
+// so a cell starting at the maximum stagger delay still has exactly enough
+// span left to reach full resolution right as lifeTotalMs elapses, and every
+// cell that started earlier keeps animating for its own longer remaining
+// span instead of finishing early and sitting idle. Every fade normally
+// completes inside its own generation by construction, at any speed, rather
+// than by clamping against the clock. "Normally" -- that held-back tick is a
+// fixed margin, and a stall elsewhere in loop() can still eat it; the
+// finalize step at the top of lifeStart()'s commit block is what actually
+// guarantees a cell's resting value gets drawn regardless, so this margin
+// only has to be good enough that fades look complete on their own most of
+// the time, not perfect under worst-case jitter.
 void recomputeLifeTiming() {
-  uint16_t totalMs = (lifeSpeed > lifeFadeInterval) ? (lifeSpeed - lifeFadeInterval) : lifeFadeInterval;
+  lifeTotalMs = (lifeSpeed > lifeFadeInterval) ? (lifeSpeed - lifeFadeInterval) : lifeFadeInterval;
   // Up to 60% of the generation can go to stagger -- spreading start times
-  // wider than that starts eating into each cell's own fade span faster than
-  // it buys visible spread, and that span is what makes Organic feel gentle
-  // rather than snappy. The floor below can still clip a cell's span
-  // slightly (worst case ~6ms past totalMs at the extremes), but totalMs
-  // already reserves a full lifeFadeInterval of margin before the next
-  // commit actually fires, so that clip never reaches it.
-  lifeStaggerMaxMs = (uint16_t)( ( (uint32_t) totalMs * 6 / 10 ) * lifeOrganic / 100 );
-  lifeSpanMs = totalMs - lifeStaggerMaxMs;
-  if ( lifeSpanMs < lifeFadeInterval ) lifeSpanMs = lifeFadeInterval;
+  // wider than that starts eating into the average cell's remaining fade
+  // span faster than it buys visible spread, and that span is what makes
+  // Organic feel gentle rather than snappy. This bounds the worst case (the
+  // cell that draws the maximum delay still gets lifeTotalMs - lifeStaggerMaxMs
+  // to fade in, floored per-cell against lifeFadeInterval in the fade loop),
+  // but every other cell gets more than that, up to the full lifeTotalMs for
+  // a cell that starts immediately.
+  lifeStaggerMaxMs = (uint16_t)( ( (uint32_t) lifeTotalMs * 6 / 10 ) * lifeOrganic / 100 );
 }
 
 // Integer easing for Life's per-cell fade -- no floats, no fmod, no lookup
@@ -1368,17 +1371,25 @@ void lifeStart() {
         // there are as many distinct start times as the generation can
         // afford instead of only a handful -- with few enough steps, most of
         // the cells changing in a generation would land on the same one and
-        // move as a visible clump rather than a spread-out ripple. Every cell
-        // shares lifeSpanMs, so a cell starting at the maximum delay still
-        // finishes exactly when the generation's fade window closes.
+        // move as a visible clump rather than a spread-out ripple. Rather
+        // than sharing one fixed span across every changing cell, each
+        // cell's span is however much of lifeTotalMs is left after its own
+        // fadeDelay -- so every cell, not just the one that happened to draw
+        // the maximum delay, keeps animating right up to the close of the
+        // generation's fade window instead of finishing early and sitting
+        // idle. That also means fade duration itself varies cell to cell,
+        // proportional to how early or late each one started, instead of
+        // being one fixed number board-wide.
         uint16_t elapsedMs = (uint16_t)( currentTime - lifeLastTime );
+        uint16_t cellSpanMs = ( lifeTotalMs > thisCell.fadeDelay ) ? ( lifeTotalMs - thisCell.fadeDelay ) : lifeFadeInterval;
+        if ( cellSpanMs < lifeFadeInterval ) cellSpanMs = lifeFadeInterval;
         uint8_t t;
         if ( elapsedMs <= thisCell.fadeDelay ) {
           t = 0;
         } else {
           uint16_t progressMs = elapsedMs - thisCell.fadeDelay;
-          if ( progressMs > lifeSpanMs ) progressMs = lifeSpanMs;
-          t = (uint8_t)( ( (uint32_t) progressMs * 255 ) / lifeSpanMs );
+          if ( progressMs > cellSpanMs ) progressMs = cellSpanMs;
+          t = (uint8_t)( ( (uint32_t) progressMs * 255 ) / cellSpanMs );
         }
 
         // A cell fading here always has exactly one of currentColor/nextColor

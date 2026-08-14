@@ -49,6 +49,7 @@ uint16_t lifeSpeed = 370;             // Milliseconds per generation; UI-adjusta
 const uint16_t lifeMinSpeed = 80;
 const uint16_t lifeMaxSpeed = 1500;
 byte lifeOrganic = 50;                // 0-100: how much each cell's fade start is staggered.
+byte lifeColorMutation = 0;           // 0-100: percent chance per generation a surviving cell's hue drifts instead of staying exact.
 uint8_t lifeFadeInterval = 16;        // ~60fps display cadence, held fixed so smoothness doesn't change with speed.
 // The two below are recomputed together by recomputeLifeTiming() whenever
 // lifeSpeed or lifeOrganic changes -- see that function for the derivation.
@@ -68,7 +69,7 @@ uint16_t lifeReviveThreshold = 12; // Below this many live cells, gently inject 
 // 1558 cells) -- see lifeCellEmbers() below for how membership is decided
 // without a stored flag, and the ember decay pass in lifeStart() for how the
 // glow is carried entirely in the LED framebuffer instead.
-const uint8_t lifeEmberChance   = 25;  // Percent of deaths that leave an ember behind.
+byte lifeEmberChance            = 25;  // 0-100: percent of deaths that leave an ember behind; UI-adjustable, see processLifeTiming().
 const uint8_t lifeEmberLevel    = 40;  // 0-255 brightness an ember holds at when its death fade lands.
 const uint8_t lifeEmberDim      = 1;   // Brightness steps removed per ember decay tick.
 const uint8_t lifeEmberInterval = 60;  // ms between ember decay ticks -- independent of lifeSpeed.
@@ -438,6 +439,10 @@ void processState() {
     Serial.print(lifeSpeed);
     Serial.print(",");
     Serial.print(lifeOrganic);
+    Serial.print(",");
+    Serial.print(lifeColorMutation);
+    Serial.print(",");
+    Serial.print(lifeEmberChance);
     Serial.println(">");
   } else if (11 == userMode) {
     Serial.print("<lifepause,");
@@ -446,6 +451,10 @@ void processState() {
     Serial.print(lifeSpeed);
     Serial.print(",");
     Serial.print(lifeOrganic);
+    Serial.print(",");
+    Serial.print(lifeColorMutation);
+    Serial.print(",");
+    Serial.print(lifeEmberChance);
     Serial.println(">");
   } else if (12 == userMode) {
     // Deliberately terse: the server is the source of truth for this mode and
@@ -600,6 +609,18 @@ void processLifeTiming(char * strtokIndex) {
   if (requestedOrganic < 0) requestedOrganic = 0;
   if (requestedOrganic > 100) requestedOrganic = 100;
   lifeOrganic = requestedOrganic;
+
+  strtokIndex = strtok(NULL, ",");
+  int requestedColorMutation = atoi(strtokIndex);
+  if (requestedColorMutation < 0) requestedColorMutation = 0;
+  if (requestedColorMutation > 100) requestedColorMutation = 100;
+  lifeColorMutation = requestedColorMutation;
+
+  strtokIndex = strtok(NULL, ",");
+  int requestedEmberChance = atoi(strtokIndex);
+  if (requestedEmberChance < 0) requestedEmberChance = 0;
+  if (requestedEmberChance > 100) requestedEmberChance = 100;
+  lifeEmberChance = requestedEmberChance;
 
   recomputeLifeTiming();
 }
@@ -1295,8 +1316,16 @@ void lifeStart() {
           allCells[w][h].nextColor = 0;
           allCells[w][h].fadeDelay = random(0, lifeStaggerMaxMs + 1);
         } else if ( allCells[w][h].currentColor && ( neighborCount == 2 || neighborCount == 3 ) ) {
-          // Cell continues living if 2 or 3 neighbors. Keep same color (no mutation).
-          allCells[w][h].nextColor = allCells[w][h].currentColor;
+          // Cell continues living. lifeColorMutation% chance per generation to
+          // drift this cell's own hue a little instead of keeping it exact --
+          // genetic drift accumulating cell by cell, generation by generation,
+          // rather than a uniform board-wide recolor (see <life,...> for that).
+          if ( lifeColorMutation > 0 && random(1, 101) <= lifeColorMutation ) {
+            allCells[w][h].hVal = (allCells[w][h].hVal + 360 + random(-15, 16)) % 360;
+            allCells[w][h].nextColor = hsl2rgb(allCells[w][h].hVal, sVal, lVal);
+          } else {
+            allCells[w][h].nextColor = allCells[w][h].currentColor;
+          }
           currentLifeCount++;
         } else if ( allCells[w][h].currentColor && neighborCount > 3 ) {
           // Cell dies if more than 3 neighbors.

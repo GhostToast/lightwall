@@ -2,6 +2,7 @@
 #include <Entropy.h>
 #include "rainColumn.h"
 #include "cell.h"
+#include "firefly.h"
 #include "utilities.h"
 #include "font.h"
 #include "sprites.h"
@@ -84,6 +85,83 @@ byte specialFire = 0;
 char matrixColorMode = 'g';
 byte matrixPaused = 0;
 uint8_t matrixColors[4][2];
+
+// --- Fireflies ------------------------------------------------------------
+// A blank field where individual points ignite, hold briefly, and fade out,
+// then relight somewhere adjacent. Every number below is a starting value to
+// be tuned against the real wall; the derivations are spelled out so tuning
+// one does not silently invalidate another.
+
+// 48 fireflies over 1024 visible pixels. Density is set by duty cycle, not by
+// this count: expected simultaneous lit points is
+//   FIREFLY_COUNT * fireflyOnMs / (fireflyOnMs + sleepAvg)
+// which at the defaults below is about 5 -- sparse and occasional. The count
+// only caps how busy the top of the Frequency slider can get (~25 lit at 100).
+#define FIREFLY_COUNT 48
+firefly allFireflies[FIREFLY_COUNT];
+
+// Phases. Strictly sequential: DARK -> FADE_IN -> HOLD -> FADE_OUT -> DARK.
+#define FIREFLY_DARK     0
+#define FIREFLY_FADE_IN  1
+#define FIREFLY_HOLD     2
+#define FIREFLY_FADE_OUT 3
+
+byte firefliesInitialized = 0;
+byte firefliesPaused = 0;
+
+uint16_t fireflyHue = 60;             // 0-359, the color selector. Hue only, like
+                                       // Fire -- the ask was about the color wheel.
+const uint8_t fireflySat = 100;       // Fixed, as Fire fixes s=100.
+// Peak lightness, 0-100 into hsl2rgb, which scales all three channels
+// proportionally below 50 -- so this is a clean brightness knob for the hue.
+// 30, not 50: the field is otherwise pure black, the panels are punishing at
+// close range, and this codebase's tuning has consistently gone dimmer for
+// contrast (lifeEmberLevel is 15/255). Tune in the 15-50 band; promote to a
+// slider later if it wants one.
+const uint8_t fireflyPeakLight = 30;
+// Per-blink ceiling jitter, 0-255 applied on top of fireflyPeakLight, so some
+// fireflies read nearer and some further. The single cheapest realism win here.
+const uint8_t fireflyPeakMin = 160;   // ~63% of peak.
+
+uint16_t fireflyFadeMs = 700;         // Each of fade-in and fade-out. The eases
+                                       // are already asymmetric (quadratic bloom
+                                       // in, cubic crawl out), so one slider
+                                       // yields a natural rise-and-linger.
+const uint16_t fireflyMinFade = 100;
+const uint16_t fireflyMaxFade = 2500;
+uint16_t fireflyHoldMs = 300;         // Full-brightness dwell; 0 is legal and
+                                       // gives a pure pulse.
+const uint16_t fireflyMinHold = 0;
+const uint16_t fireflyMaxHold = 3000;
+byte fireflyFrequency = 40;           // 0-100, how often a firefly reignites.
+byte fireflyHueVariation = 40;        // 0-100, mapped to +/- degrees below.
+
+// Slider-to-internal mapping ceilings.
+// 24 degrees at 100 keeps this "fairly subtle": it lands just above Life's
+// effective ceiling (maxMutationDegrees x mutationSliderCeilingPercent =
+// ~+/-18.75), which is fair because Life's drift is cumulative and heritable
+// while this one is measured from the base hue every time and so never
+// compounds.
+const uint8_t fireflyMaxHueDrift = 24;
+// Sleep window endpoints, in ms, at Frequency 0 and 100. fireflySleepMax is
+// capped so that sleepAvg * 3/2 (the jitter ceiling in recomputeFireflyTiming)
+// stays inside uint16_t.
+const uint16_t fireflySleepMax = 40000;
+const uint16_t fireflySleepMin = 1500;
+const uint16_t fireflySleepFloor = 250;  // Always leave some darkness between
+                                          // blinks, or it stops reading as a blink.
+
+// Derived by recomputeFireflyTiming(), same contract as recomputeLifeTiming().
+uint16_t fireflyOnMs = 1700;          // 2 * fade + hold.
+uint16_t fireflySleepLow = 6573;      // random(low, high) bounds for one cycle.
+uint16_t fireflySleepHigh = 19719;
+uint8_t  fireflyHueDrift = 9;         // Degrees, +/-.
+
+const uint8_t fireflyFrameInterval = 16;  // ~60fps, matching lifeFadeInterval.
+// Its own clock, for the reason spelled out above lifeFadeLastTime: sharing
+// globalLastTime across modes left stale timestamps on mode switch.
+unsigned long fireflyLastTime = 0;
+
 unsigned long currentTime = 0;
 unsigned long globalLastTime = 0;
 unsigned long lifeLastTime = 0;
@@ -369,6 +447,15 @@ void parseData() {
   } else if (strcmp(strtokIndex, "sprites") == 0) {
     userMode = 14;
     processSprites(strtokIndex);
+  } else if (strcmp(strtokIndex, "fireflies") == 0) {
+    userMode = 13;
+    processFireflies(strtokIndex);
+  } else if (strcmp(strtokIndex, "firefliespause") == 0) {
+    userMode = 15;
+    processFirefliesPause(strtokIndex);
+  } else if (strcmp(strtokIndex, "firefliestiming") == 0) {
+    // Deliberately does not touch userMode -- see processFirefliesTiming().
+    processFirefliesTiming(strtokIndex);
   }
 }
 
@@ -464,6 +551,33 @@ void processState() {
     Serial.println(">");
   } else if (14 == userMode) {
     Serial.println("<sprites>");
+  } else if (13 == userMode) {
+    Serial.print("<fireflies,");
+    Serial.print(fireflyHue);
+    Serial.print(",");
+    Serial.print(fireflyFadeMs);
+    Serial.print(",");
+    Serial.print(fireflyHoldMs);
+    Serial.print(",");
+    Serial.print(fireflyFrequency);
+    Serial.print(",");
+    Serial.print(fireflyHueVariation);
+    Serial.println(">");
+  } else if (15 == userMode) {
+    // No color here, exactly as <lifepause,...> omits h/s/l -- the server
+    // backfills the hue from its own defaults. The four timing fields still
+    // have to come back so the sliders restore while paused.
+    Serial.print("<firefliespause,");
+    Serial.print(firefliesPaused);
+    Serial.print(",");
+    Serial.print(fireflyFadeMs);
+    Serial.print(",");
+    Serial.print(fireflyHoldMs);
+    Serial.print(",");
+    Serial.print(fireflyFrequency);
+    Serial.print(",");
+    Serial.print(fireflyHueVariation);
+    Serial.println(">");
   } else {
     //Serial.print("<fail>");
     Serial.println("x");
@@ -622,6 +736,66 @@ void processLifeTiming(char * strtokIndex) {
   lifeEmberChance = requestedEmberChance;
 
   recomputeLifeTiming();
+}
+
+/**
+   <fireflies,H> -- the color selector, hue only (mirrors <fire,H>).
+
+   Deliberately does not clear firefliesInitialized: this arrives on every
+   release of the hue slider, and reinitializing would blank the field and
+   restart all FIREFLY_COUNT clocks on each drag. Fireflies already lit keep
+   the hue they ignited with and finish their blink in it; new ignitions use
+   the new hue, so the wall migrates to the new color over a second or two
+   instead of snapping. Unlike Life, there is no lifeNewColor equivalent, and
+   none is wanted -- the migration is the pleasant behavior here.
+*/
+void processFireflies(char * strtokIndex) {
+  strtokIndex = strtok(NULL, ",");
+  uint16_t requested = atoi(strtokIndex);
+  fireflyHue = ( requested > 359 ) ? ( requested % 360 ) : requested;
+  firefliesPaused = 0;
+}
+
+void processFirefliesPause(char * strtokIndex) {
+  strtokIndex = strtok(NULL, ",");
+  firefliesPaused = atoi(strtokIndex);
+  if ( firefliesPaused ) {
+    firefliesInitialized = 0;
+  }
+}
+
+/**
+   <firefliestiming,FADE,HOLD,FREQ,VAR> -- glow shape and density only. Like
+   <lifetiming,...>, this deliberately does not touch userMode, so dragging a
+   slider is safe while paused or while the wall is in another mode, and does
+   not touch firefliesInitialized, so it does not restart the field.
+*/
+void processFirefliesTiming(char * strtokIndex) {
+  strtokIndex = strtok(NULL, ",");
+  int requestedFade = atoi(strtokIndex);
+  if ( requestedFade < fireflyMinFade ) requestedFade = fireflyMinFade;
+  if ( requestedFade > fireflyMaxFade ) requestedFade = fireflyMaxFade;
+  fireflyFadeMs = requestedFade;
+
+  strtokIndex = strtok(NULL, ",");
+  int requestedHold = atoi(strtokIndex);
+  if ( requestedHold < fireflyMinHold ) requestedHold = fireflyMinHold;
+  if ( requestedHold > fireflyMaxHold ) requestedHold = fireflyMaxHold;
+  fireflyHoldMs = requestedHold;
+
+  strtokIndex = strtok(NULL, ",");
+  int requestedFrequency = atoi(strtokIndex);
+  if ( requestedFrequency < 0 )   requestedFrequency = 0;
+  if ( requestedFrequency > 100 ) requestedFrequency = 100;
+  fireflyFrequency = requestedFrequency;
+
+  strtokIndex = strtok(NULL, ",");
+  int requestedVariation = atoi(strtokIndex);
+  if ( requestedVariation < 0 )   requestedVariation = 0;
+  if ( requestedVariation > 100 ) requestedVariation = 100;
+  fireflyHueVariation = requestedVariation;
+
+  recomputeFireflyTiming();
 }
 
 /**
@@ -1168,6 +1342,38 @@ void recomputeLifeTiming() {
   lifeStaggerMaxMs = (uint16_t)( ( (uint32_t) lifeTotalMs * 6 / 10 ) * lifeOrganic / 100 );
 }
 
+// Mirrors recomputeLifeTiming(): called from processFirefliesTiming() and from
+// fireflyStart()'s init block, so nothing downstream has to recompute.
+//
+// Frequency maps to a *sleep window*, not to a target duty cycle: fade/hold
+// decide how long a blink lasts, frequency decides how often one starts, and
+// the two compose without either redefining the other.
+//
+// The taper is quadratic in (100 - frequency) rather than linear in
+// milliseconds. Linear-in-ms puts almost all of the perceptible change in the
+// top third of the slider (halving the sleep doubles the rate, and the last 10
+// points of the slider would carry a 14x rate change); the quadratic tracks a
+// geometric sweep closely enough to feel even under the hand, with one integer
+// expression and no table. Worst-case intermediate is 38500 * 100 * 100, well
+// inside uint32_t.
+void recomputeFireflyTiming() {
+  fireflyOnMs = (uint16_t)( 2 * (uint32_t) fireflyFadeMs + fireflyHoldMs );
+
+  uint32_t inv = 100 - fireflyFrequency;
+  uint16_t sleepAvg = fireflySleepMin +
+    (uint16_t)( ( (uint32_t)( fireflySleepMax - fireflySleepMin ) * inv * inv ) / 10000 );
+
+  // +/-50% jitter per cycle, so no two fireflies settle into lockstep and the
+  // same slider position never produces a metronome.
+  fireflySleepLow  = sleepAvg / 2;
+  fireflySleepHigh = sleepAvg + sleepAvg / 2;
+  if ( fireflySleepLow < fireflySleepFloor ) fireflySleepLow = fireflySleepFloor;
+  // random(min, max) returns min when max <= min, which would freeze the jitter.
+  if ( fireflySleepHigh <= fireflySleepLow ) fireflySleepHigh = fireflySleepLow + 1;
+
+  fireflyHueDrift = (uint8_t)( ( (uint32_t) fireflyHueVariation * fireflyMaxHueDrift ) / 100 );
+}
+
 // Integer easing for Life's per-cell fade -- no floats, no fmod, no lookup
 // table; a Cortex-M4 divide is a few cycles and ~1558 cells at 60fps is well
 // inside budget. Birth rises fast and eases into full brightness, a bloom,
@@ -1561,6 +1767,153 @@ uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
   return count;
 }
 
+// Chart-space neighbors. Not above()/below()/left()/right() -- those wrap mod
+// maxHeight/maxWidth and would walk a firefly into a strut band, where it would
+// be invisible for a whole blink. See firefly.h.
+uint8_t fireflyStep( uint8_t v ) {
+  return random(0, 2) ? ( ( v + 1 ) % 32 ) : ( ( v + 31 ) % 32 );
+}
+
+// This blink's hue: the selected hue plus a subtle, non-cumulative offset.
+uint16_t rollFireflyHue() {
+  if ( 0 == fireflyHueDrift ) return fireflyHue;
+  int16_t h = (int16_t) fireflyHue + (int16_t) random( -(int16_t) fireflyHueDrift,
+                                                       (int16_t) fireflyHueDrift + 1 );
+  if ( h < 0 )    h += 360;
+  if ( h > 359 )  h -= 360;
+  return (uint16_t) h;
+}
+
+// A blank field where individual points ignite, hold briefly, and fade out,
+// then relight somewhere adjacent. Position lives in the gap-free 32x32 chart
+// space (chartCol[]/chartRow[]), not the 38x41 logical grid -- see firefly.h.
+// Fireflies never read the framebuffer (no ember-style overtake logic here),
+// so a firefly only ever repositions while fully dark: the pixel it last used
+// was written black when its fade-out completed, so there is no trail to clean
+// up and no previous-pixel bookkeeping needed.
+void fireflyStart() {
+  if ( firefliesPaused ) {
+    oneColor(0);
+    return;
+  }
+
+  if ( ! firefliesInitialized ) {
+    oneColor(0);
+    recomputeFireflyTiming();
+    for ( uint8_t i = 0; i < FIREFLY_COUNT; i++ ) {
+      firefly &f = allFireflies[i];
+      f.x = random(0, 32);
+      f.y = random(0, 32);
+      f.phase = FIREFLY_DARK;
+      f.phaseStart = currentTime;
+      // First cycle only: draw the dwell from [0, high) rather than
+      // [low, high), so the field wakes up gradually over one full sleep
+      // window instead of a third of the wall igniting at once at t=low.
+      f.sleepMs = random(0, fireflySleepHigh);
+      f.hue = fireflyHue;
+      f.peak = 255;
+    }
+    firefliesInitialized = 1;
+  }
+
+  if ( currentTime - fireflyLastTime < fireflyFrameInterval ) {
+    return;
+  }
+  fireflyLastTime = currentTime;
+
+  // Pass 1: advance phases. Any firefly whose fade-out just landed writes its
+  // own pixel black here, before pass 2 draws anything -- two fireflies can
+  // share a pixel, and a single advance-and-draw loop would let a finishing
+  // firefly erase a still-lit one for a frame. Blacks first, draws second, so
+  // that ordering cannot happen.
+  for ( uint8_t i = 0; i < FIREFLY_COUNT; i++ ) {
+    firefly &f = allFireflies[i];
+    unsigned long elapsed = currentTime - f.phaseStart;
+
+    switch ( f.phase ) {
+      case FIREFLY_DARK:
+        if ( elapsed >= f.sleepMs ) {
+          // Ignition owns the position, hue, and brightness reroll. It is
+          // safe to move here precisely because the pixel this firefly last
+          // used was written black when its fade-out completed, and nothing
+          // in this mode reads the framebuffer -- so there is no trail to
+          // clean up and no previous-pixel bookkeeping at all.
+          f.x = fireflyStep(f.x);
+          f.y = fireflyStep(f.y);
+          f.hue = rollFireflyHue();
+          f.peak = random(fireflyPeakMin, 256);
+          f.phase = FIREFLY_FADE_IN;
+          f.phaseStart = currentTime;
+        }
+        break;
+
+      case FIREFLY_FADE_IN:
+        if ( elapsed >= fireflyFadeMs ) {
+          f.phase = FIREFLY_HOLD;
+          f.phaseStart = currentTime;
+        }
+        break;
+
+      case FIREFLY_HOLD:
+        if ( elapsed >= fireflyHoldMs ) {
+          f.phase = FIREFLY_FADE_OUT;
+          f.phaseStart = currentTime;
+        }
+        break;
+
+      case FIREFLY_FADE_OUT:
+        if ( elapsed >= fireflyFadeMs ) {
+          // Explicitly write the resting value rather than trusting the last
+          // fade frame to have reached 0 -- the same lesson as
+          // finalizeRainColumn() and Life's finalize block. Integer rounding
+          // or a frame skipped by a stall would otherwise leave a dim ghost
+          // lit forever, since nothing else ever touches this pixel.
+          setPixelSafe( remapXY( chartCol[f.x], chartRow[f.y] ), 0 );
+          f.sleepMs = random( fireflySleepLow, fireflySleepHigh );
+          f.phase = FIREFLY_DARK;
+          f.phaseStart = currentTime;
+        }
+        break;
+    }
+  }
+
+  // Pass 2: draw everything currently lit.
+  for ( uint8_t i = 0; i < FIREFLY_COUNT; i++ ) {
+    firefly &f = allFireflies[i];
+    if ( FIREFLY_DARK == f.phase ) continue;
+
+    uint8_t level;
+    if ( FIREFLY_HOLD == f.phase ) {
+      level = 255;
+    } else {
+      // Same elapsed -> t -> ease idiom as Life's fade loop (see the
+      // elapsedMs/cellSpanMs/t block there). Span floored at the frame
+      // interval so a fade can never divide by zero.
+      uint16_t span = ( fireflyFadeMs > fireflyFrameInterval ) ? fireflyFadeMs
+                                                                : fireflyFrameInterval;
+      uint16_t progress = (uint16_t)( currentTime - f.phaseStart );
+      if ( progress > span ) progress = span;
+      uint8_t t = (uint8_t)( ( (uint32_t) progress * 255 ) / span );
+      level = ( FIREFLY_FADE_IN == f.phase ) ? easeLifeBirth(t) : easeLifeDeath(t);
+    }
+
+    // Fold this blink's own ceiling into the eased level, then scale the hue.
+    level = (uint8_t)( ( (uint16_t) level * f.peak ) / 255 );
+
+    uint32_t base = hsl2rgb( f.hue, fireflySat, fireflyPeakLight );
+    uint8_t r = (uint8_t)( ( (uint16_t) red(base)   * level ) / 255 );
+    uint8_t g = (uint8_t)( ( (uint16_t) green(base) * level ) / 255 );
+    uint8_t b = (uint8_t)( ( (uint16_t) blue(base)  * level ) / 255 );
+
+    setPixelSafe( remapXY( chartCol[f.x], chartRow[f.y] ), makeColor( r, g, b ) );
+  }
+
+  // Inside the frame gate, unlike lifeStart()/makeItRain(), which show() on
+  // every loop() pass. A show() is a ~5ms blocking DMA transfer for 1024 RGBW
+  // pixels; there is nothing to send when no firefly has moved.
+  leds.show();
+}
+
 void fireStarter() {
   if ( firePaused ) {
     oneColor(0);
@@ -1882,6 +2235,14 @@ void displayUserSelectedMode() {
 
     case 14: // Sprites, one per panel.
       spriteShow();
+      break;
+
+    case 13: // Fireflies.
+      fireflyStart();
+      break;
+
+    case 15: // Pause fireflies.
+      fireflyStart();
       break;
 
     default:

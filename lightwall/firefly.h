@@ -8,11 +8,12 @@
 // happens. With only FIREFLY_COUNT objects on the wall that loss is visible as
 // irregular density rather than as a texture.
 //
-// One timestamp, not rainColumn's lastUpdated/lastCompleted pair: a rain column
-// runs a per-object frame timer and a completion timer simultaneously, whereas a
-// firefly's four phases are strictly sequential (only ever one timer live) and
-// the frame cadence is global (fireflyLastTime). phaseStart is therefore the
-// whole clock.
+// Two timestamps, not rainColumn's lastUpdated/lastCompleted pair: phaseStart
+// is the strictly-sequential DARK->FADE_IN->HOLD->FADE_OUT clock (only ever
+// one phase live), while nextHoverTime is an independent sub-clock that only
+// matters during HOLD -- see fireflyStart()'s hover step, which moves the
+// firefly a little *while lit* so the drift is actually visible rather than
+// an invisible reposition between blinks.
 struct firefly {
   uint8_t  x;                // 0-31, column in chart space (see chartCol[]).
   uint8_t  y;                // 0-31, row in chart space (see chartRow[]).
@@ -22,4 +23,5 @@ struct firefly {
   uint16_t hue;              // 0-359, this blink's hue: fireflyHue +/- drift.
   uint16_t sleepMs;          // dark dwell rolled for this cycle.
   unsigned long phaseStart;  // millis() when the current phase began.
+  unsigned long nextHoverTime; // millis() deadline for the next in-place hover step, while HOLD.
 };

@@ -151,6 +151,14 @@ const uint16_t fireflySleepMin = 1500;
 const uint16_t fireflySleepFloor = 250;  // Always leave some darkness between
                                           // blinks, or it stops reading as a blink.
 
+// How often a firefly nudges itself one step while HOLD -- the "gentle
+// hover/drift" itself. Deliberately shorter than the repositioning that also
+// happens (invisibly) at each reignite: that one only matters over many
+// cycles field-wide, this one is what actually reads as a single firefly
+// moving on screen while lit.
+const uint16_t fireflyHoverMinMs = 100;
+const uint16_t fireflyHoverMaxMs = 250;
+
 // Derived by recomputeFireflyTiming(), same contract as recomputeLifeTiming().
 uint16_t fireflyOnMs = 1700;          // 2 * fade + hold.
 uint16_t fireflySleepLow = 6573;      // random(low, high) bounds for one cycle.
@@ -796,6 +804,21 @@ void processFirefliesTiming(char * strtokIndex) {
   fireflyHueVariation = requestedVariation;
 
   recomputeFireflyTiming();
+
+  // Without this, a firefly already sitting in the dark phase keeps waiting
+  // out the sleepMs it rolled under the *old* frequency -- which at a low
+  // frequency can be tens of seconds -- so dragging the slider would look
+  // like it did nothing until each firefly happened to cycle through on its
+  // own. Rerolling every currently-dark firefly against the freshly computed
+  // window makes the change take effect across the field immediately. Lit
+  // fireflies (fading in, holding, fading out) are untouched -- only the dark
+  // dwell is driven by frequency.
+  for ( uint8_t i = 0; i < FIREFLY_COUNT; i++ ) {
+    if ( FIREFLY_DARK == allFireflies[i].phase ) {
+      allFireflies[i].sleepMs = random( fireflySleepLow, fireflySleepHigh );
+      allFireflies[i].phaseStart = currentTime;
+    }
+  }
 }
 
 /**
@@ -1851,6 +1874,7 @@ void fireflyStart() {
         if ( elapsed >= fireflyFadeMs ) {
           f.phase = FIREFLY_HOLD;
           f.phaseStart = currentTime;
+          f.nextHoverTime = currentTime + random(fireflyHoverMinMs, fireflyHoverMaxMs + 1);
         }
         break;
 
@@ -1858,6 +1882,18 @@ void fireflyStart() {
         if ( elapsed >= fireflyHoldMs ) {
           f.phase = FIREFLY_FADE_OUT;
           f.phaseStart = currentTime;
+        } else if ( currentTime >= f.nextHoverTime ) {
+          // The gentle hover: nudge position by one step while still lit.
+          // Blank the old spot explicitly first -- unlike the DARK->FADE_IN
+          // reposition, this one moves a pixel that is genuinely lit right
+          // now, so nothing else will ever clear it if we don't. Safe against
+          // another firefly sharing this pixel: pass 2 below redraws every
+          // still-lit firefly unconditionally from its current position, so
+          // a blank written here can never outlive this frame.
+          setPixelSafe( remapXY( chartCol[f.x], chartRow[f.y] ), 0 );
+          f.x = fireflyStep(f.x);
+          f.y = fireflyStep(f.y);
+          f.nextHoverTime = currentTime + random(fireflyHoverMinMs, fireflyHoverMaxMs + 1);
         }
         break;
 

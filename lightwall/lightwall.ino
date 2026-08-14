@@ -49,7 +49,7 @@ uint16_t lifeSpeed = 370;             // Milliseconds per generation; UI-adjusta
 const uint16_t lifeMinSpeed = 80;
 const uint16_t lifeMaxSpeed = 1500;
 byte lifeOrganic = 50;                // 0-100: how much each cell's fade start is staggered.
-byte lifeColorMutation = 0;           // 0-100: percent chance per generation a surviving cell's hue drifts instead of staying exact.
+byte lifeColorMutation = 0;           // 0-100: percent chance a new cell's hue leaps far from its "parent" instead of nearly matching it -- see getNeighborCount().
 uint8_t lifeFadeInterval = 16;        // ~60fps display cadence, held fixed so smoothness doesn't change with speed.
 // The two below are recomputed together by recomputeLifeTiming() whenever
 // lifeSpeed or lifeOrganic changes -- see that function for the derivation.
@@ -1316,16 +1316,10 @@ void lifeStart() {
           allCells[w][h].nextColor = 0;
           allCells[w][h].fadeDelay = random(0, lifeStaggerMaxMs + 1);
         } else if ( allCells[w][h].currentColor && ( neighborCount == 2 || neighborCount == 3 ) ) {
-          // Cell continues living. lifeColorMutation% chance per generation to
-          // drift this cell's own hue a little instead of keeping it exact --
-          // genetic drift accumulating cell by cell, generation by generation,
-          // rather than a uniform board-wide recolor (see <life,...> for that).
-          if ( lifeColorMutation > 0 && random(1, 101) <= lifeColorMutation ) {
-            allCells[w][h].hVal = (allCells[w][h].hVal + 360 + random(-15, 16)) % 360;
-            allCells[w][h].nextColor = hsl2rgb(allCells[w][h].hVal, sVal, lVal);
-          } else {
-            allCells[w][h].nextColor = allCells[w][h].currentColor;
-          }
+          // Cell continues living if 2 or 3 neighbors. Keep same color --
+          // mutation happens at birth instead, see getNeighborCount()'s
+          // parent-hue blend below.
+          allCells[w][h].nextColor = allCells[w][h].currentColor;
           currentLifeCount++;
         } else if ( allCells[w][h].currentColor && neighborCount > 3 ) {
           // Cell dies if more than 3 neighbors.
@@ -1566,14 +1560,25 @@ uint8_t getNeighborCount( uint8_t x, uint8_t y ) {
     // random(min, max) excludes max, so the upper bound must be count, not
     // count - 1 -- the old bound could never select the last parent.
     byte parentIndex = random(0, count);
-    uint8_t geneIndex = random(0, 2);
-    byte geneDirection = random(1, 100);
     uint16_t tempHVal = 0;
 
-    if ( geneDirection % 2) { // Even or odd
-      tempHVal = fmod(parents[parentIndex] + geneIndex, 360);
+    if ( lifeColorMutation > 0 && random(1, 101) <= lifeColorMutation ) {
+      // Genetic leap: hue lands 30-150 degrees from the parent's, in a
+      // random direction around the wheel, instead of the near-exact
+      // inheritance below -- lifeColorMutation is the odds any given new
+      // life takes this leap rather than closely resembling its parent.
+      uint16_t hueJump = random(30, 151);
+      if ( random(0, 2) ) hueJump = 360 - hueJump;
+      tempHVal = (parents[parentIndex] + hueJump) % 360;
     } else {
-      tempHVal = fmod(parents[parentIndex] - geneIndex, 360);
+      uint8_t geneIndex = random(0, 2);
+      byte geneDirection = random(1, 100);
+
+      if ( geneDirection % 2) { // Even or odd
+        tempHVal = fmod(parents[parentIndex] + geneIndex, 360);
+      } else {
+        tempHVal = fmod(parents[parentIndex] - geneIndex, 360);
+      }
     }
 
     allCells[x][y].hVal = tempHVal;

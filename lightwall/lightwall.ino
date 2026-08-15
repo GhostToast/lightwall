@@ -136,13 +136,22 @@ const uint16_t fireflyMaxHold = 3000;
 byte fireflyFrequency = 40;           // 0-100, how often a firefly reignites.
 byte fireflyHueVariation = 40;        // 0-100, mapped to +/- degrees below.
 
+// Per-blink HOLD jitter, +/- this percent of fireflyHoldMs, rerolled at every
+// ignition (see rollFireflyHold()). Without it every firefly glows for
+// exactly the same length at a fixed slider setting -- only peak brightness
+// and hue varied blink to blink. Clamped to [fireflyMinHold, fireflyMaxHold]
+// same as the slider itself, so the result always stays within the range the
+// slider promises, just spread out across it instead of pinned to one value.
+const uint8_t fireflyHoldJitterPercent = 50;
+
 // Slider-to-internal mapping ceilings.
-// 24 degrees at 100 keeps this "fairly subtle": it lands just above Life's
-// effective ceiling (maxMutationDegrees x mutationSliderCeilingPercent =
-// ~+/-18.75), which is fair because Life's drift is cumulative and heritable
-// while this one is measured from the base hue every time and so never
-// compounds.
-const uint8_t fireflyMaxHueDrift = 24;
+// Unlike Life's drift, this one is measured from the base hue every blink and
+// never compounds, so it can afford to range wider than Life's effective
+// ceiling (maxMutationDegrees x mutationSliderCeilingPercent = ~+/-18.75)
+// without the runaway-color risk that caps Life. 45 degrees at 100 is chosen
+// so the top of the Variation slider reads as clearly varied hue-to-hue
+// rather than a near-miss of the base color.
+const uint8_t fireflyMaxHueDrift = 45;
 // Sleep window endpoints, in ms, at Frequency 0 and 100. fireflySleepMax is
 // capped so that sleepAvg * 3/2 (the jitter ceiling in recomputeFireflyTiming)
 // stays inside uint16_t.
@@ -158,6 +167,28 @@ const uint16_t fireflySleepFloor = 250;  // Always leave some darkness between
 // Frequency); capping it at one occasional, rare step keeps the movement
 // pleasant and peaceful rather than a constant tremor across the field.
 const uint8_t fireflyHoverChancePercent = 35;
+
+// The brightness "waver": a brief dim-and-recover dip partway through HOLD,
+// independent of and unrelated to the hover step above (one dims, one moves)
+// and also unrelated to the pre-existing zero-hold "pure pulse" mentioned at
+// fireflyHoldMs -- that is a whole blink with no dwell at all, this is a
+// momentary sag inside a blink that is otherwise dwelling normally. Same
+// at-most-once-per-cycle, chance-gated shape as the hover, for the same
+// reason: a per-tick chance multiplies into a flicker rather than a read as
+// one deliberate dip.
+//
+// Gated by fireflyWaverMinHoldMs because the dip needs room to be smooth --
+// scheduled in a window and given a duration both scaled off f.holdMs (see
+// fireflyStart()), so a short blink physically cannot fit one; below this
+// floor it is not offered at all rather than being crushed into an
+// indistinguishable flicker.
+const uint8_t fireflyWaverChancePercent = 30;
+const uint16_t fireflyWaverMinHoldMs = 700;
+// Dip depth, 0-255 subtracted from the 255 HOLD ceiling at the deepest point
+// of the dip (before f.peak scales it down further like any other level).
+// 90 reads as a clear, deliberate sag without ever dropping low enough to
+// look like the blink is ending early.
+const uint8_t fireflyWaverDepth = 90;
 
 // Derived by recomputeFireflyTiming(), same contract as recomputeLifeTiming().
 uint16_t fireflyOnMs = 1700;          // 2 * fade + hold.
@@ -1819,6 +1850,19 @@ uint16_t rollFireflyHue() {
   return (uint16_t) h;
 }
 
+// This blink's HOLD duration: fireflyHoldMs +/- fireflyHoldJitterPercent,
+// clamped back into the slider's own [min, max] so a jittered value can never
+// read as "the slider promised something it didn't deliver." A hold of 0 is
+// the legal "pure pulse" case (see fireflyHoldMs) and has no jitter to add.
+uint16_t rollFireflyHold() {
+  if ( 0 == fireflyHoldMs ) return 0;
+  int32_t jitter = (int32_t)( (uint32_t) fireflyHoldMs * fireflyHoldJitterPercent / 100 );
+  int32_t h = (int32_t) fireflyHoldMs + (int32_t) random( -jitter, jitter + 1 );
+  if ( h < (int32_t) fireflyMinHold ) h = fireflyMinHold;
+  if ( h > (int32_t) fireflyMaxHold ) h = fireflyMaxHold;
+  return (uint16_t) h;
+}
+
 // A blank field where individual points ignite, hold briefly, and fade out,
 // then relight somewhere adjacent. Position lives in the gap-free 32x32 chart
 // space (chartCol[]/chartRow[]), not the 38x41 logical grid -- see firefly.h.
@@ -1877,6 +1921,7 @@ void fireflyStart() {
           f.y = fireflyStep(f.y);
           f.hue = rollFireflyHue();
           f.peak = random(fireflyPeakMin, 256);
+          f.holdMs = rollFireflyHold();
           f.phase = FIREFLY_FADE_IN;
           f.phaseStart = currentTime;
         }
@@ -1891,21 +1936,40 @@ void fireflyStart() {
           // of the hold (not right at ignition, not right before fade-out).
           // Missing the roll (or holdMs being 0, a legal pure-pulse) sets
           // nextHoverTime past the end of the hold, which is the same as
-          // never, since the elapsed >= fireflyHoldMs check above always
-          // fires first.
-          if ( fireflyHoldMs > 0 && random(1, 101) <= fireflyHoverChancePercent ) {
-            uint16_t hoverWindowStart = (uint16_t)( (uint32_t) fireflyHoldMs * 3 / 10 );
-            uint16_t hoverWindowEnd   = (uint16_t)( (uint32_t) fireflyHoldMs * 7 / 10 );
+          // never, since the elapsed >= f.holdMs check above always fires
+          // first.
+          if ( f.holdMs > 0 && random(1, 101) <= fireflyHoverChancePercent ) {
+            uint16_t hoverWindowStart = (uint16_t)( (uint32_t) f.holdMs * 3 / 10 );
+            uint16_t hoverWindowEnd   = (uint16_t)( (uint32_t) f.holdMs * 7 / 10 );
             if ( hoverWindowEnd <= hoverWindowStart ) hoverWindowEnd = hoverWindowStart + 1;
             f.nextHoverTime = currentTime + random(hoverWindowStart, hoverWindowEnd);
           } else {
-            f.nextHoverTime = currentTime + fireflyHoldMs + 1;
+            f.nextHoverTime = currentTime + f.holdMs + 1;
+          }
+          // The waver: same shape as the hover roll above, but gated by
+          // fireflyWaverMinHoldMs first -- a hold too short to give the dip
+          // room to read as deliberate doesn't get offered one at all.
+          // Duration is rolled *before* the window on purpose: unlike the
+          // hover, which is instantaneous, the waver takes time to play out,
+          // so the window's late edge is holdMs - duration, not a fixed
+          // fraction -- otherwise a dip starting near 9/10 of a long hold
+          // could still be mid-recovery when elapsed >= f.holdMs above cuts
+          // over to FADE_OUT, clipping the return-to-full half short.
+          if ( f.holdMs >= fireflyWaverMinHoldMs && random(1, 101) <= fireflyWaverChancePercent ) {
+            f.waverDurationMs = (uint16_t)( (uint32_t) f.holdMs * random(15, 31) / 100 );
+            uint16_t waverWindowStart = (uint16_t)( (uint32_t) f.holdMs * 1 / 10 );
+            uint16_t waverWindowEnd   = f.holdMs - f.waverDurationMs;
+            if ( waverWindowEnd <= waverWindowStart ) waverWindowEnd = waverWindowStart + 1;
+            f.nextWaverTime = currentTime + random(waverWindowStart, waverWindowEnd);
+          } else {
+            f.nextWaverTime = currentTime + f.holdMs + 1;
+            f.waverDurationMs = 0;
           }
         }
         break;
 
       case FIREFLY_HOLD:
-        if ( elapsed >= fireflyHoldMs ) {
+        if ( elapsed >= f.holdMs ) {
           f.phase = FIREFLY_FADE_OUT;
           f.phaseStart = currentTime;
         } else if ( currentTime >= f.nextHoverTime ) {
@@ -1921,7 +1985,7 @@ void fireflyStart() {
           f.y = fireflyStep(f.y);
           // Consumed: push past the end of this hold so it cannot fire again
           // this cycle. The next FADE_IN->HOLD transition rolls a fresh one.
-          f.nextHoverTime = currentTime + fireflyHoldMs + 1;
+          f.nextHoverTime = currentTime + f.holdMs + 1;
         }
         break;
 
@@ -1949,6 +2013,20 @@ void fireflyStart() {
     uint8_t level;
     if ( FIREFLY_HOLD == f.phase ) {
       level = 255;
+      // The waver, if one was rolled for this hold (waverDurationMs > 0) and
+      // its window has arrived: a triangular dip, zero at both edges and
+      // deepest at the midpoint, so it reads as one smooth sag-and-recover
+      // rather than a hard step down and back. Folded in before the f.peak
+      // scale below, same as the fade-in/fade-out eases are.
+      if ( f.waverDurationMs > 0 && currentTime >= f.nextWaverTime ) {
+        unsigned long waverElapsed = currentTime - f.nextWaverTime;
+        if ( waverElapsed < f.waverDurationMs ) {
+          uint8_t wt = (uint8_t)( ( (uint32_t) waverElapsed * 255 ) / f.waverDurationMs );
+          uint8_t depthNow = ( wt < 128 ) ? (uint8_t)( wt * 2 ) : (uint8_t)( ( 255 - wt ) * 2 );
+          uint8_t dip = (uint8_t)( ( (uint16_t) depthNow * fireflyWaverDepth ) / 255 );
+          level = (uint8_t)( 255 - dip );
+        }
+      }
     } else {
       // Same elapsed -> t -> ease idiom as Life's fade loop (see the
       // elapsedMs/cellSpanMs/t block there). Span floored at the frame

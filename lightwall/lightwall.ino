@@ -85,6 +85,9 @@ byte specialFire = 0;
 char matrixColorMode = 'g';
 byte matrixPaused = 0;
 uint8_t matrixColors[4][2];
+byte specialMatrix = 0;
+uint16_t matrixHueShift = 0;
+const uint8_t matrixRainbowChannelSpread = 32;
 
 // --- Fireflies ------------------------------------------------------------
 // A blank field where individual points ignite, hold briefly, and fade out,
@@ -495,6 +498,9 @@ void parseData() {
   } else if (strcmp(strtokIndex, "firefliestiming") == 0) {
     // Deliberately does not touch userMode -- see processFirefliesTiming().
     processFirefliesTiming(strtokIndex);
+  } else if (strcmp(strtokIndex, "specialmatrix") == 0) {
+    userMode = 16;
+    processSpecialMatrix(strtokIndex);
   }
 }
 
@@ -617,6 +623,10 @@ void processState() {
     Serial.print(",");
     Serial.print(fireflyHueVariation);
     Serial.println(">");
+  } else if (16 == userMode) {
+    Serial.print("<specialmatrix,");
+    Serial.print(specialMatrix);
+    Serial.println(">");
   } else {
     //Serial.print("<fail>");
     Serial.println("x");
@@ -700,10 +710,12 @@ void processMatrixPause(char * strtokIndex) {
   // Get paused status (boolean).
   strtokIndex = strtok(NULL, ",");
   matrixPaused = atoi(strtokIndex);
+  specialMatrix = 0;
 }
 
 void processMatrix(char * strtokIndex) {
   matrixPaused = 0;
+  specialMatrix = 0;
   // Fill up matrix colors.
   for (byte i = 0; i < 4; i++) {
     for (byte z = 0; z < 2; z++) {
@@ -1000,6 +1012,11 @@ void processSpecialFire(char * strtokIndex) {
   specialFire = atoi(strtokIndex);
 }
 
+void processSpecialMatrix(char * strtokIndex) {
+  strtokIndex = strtok(NULL, ",");
+  specialMatrix = atoi(strtokIndex);
+}
+
 void respondToServer() {
   if (newDataFromServer) {
     newDataFromServer = false;
@@ -1019,6 +1036,24 @@ void makeItRain() {
       allRainColumns[i].column = i;
     }
     matrixInitialized = true;
+  }
+
+  if ( specialMatrix ) {
+    if ( (currentTime - hslLastTime) > hslInterval ) {
+      hslLastTime = currentTime;
+      matrixHueShift++;
+      if (matrixHueShift == 360) matrixHueShift = 0;
+    }
+    uint32_t rainbowColor = hsl2rgb(matrixHueShift, 100, 50);
+    uint8_t rMax = red(rainbowColor), gMax = green(rainbowColor), bMax = blue(rainbowColor);
+    matrixColors[0][0] = (rMax > matrixRainbowChannelSpread) ? rMax - matrixRainbowChannelSpread : 0;
+    matrixColors[0][1] = rMax;
+    matrixColors[1][0] = (gMax > matrixRainbowChannelSpread) ? gMax - matrixRainbowChannelSpread : 0;
+    matrixColors[1][1] = gMax;
+    matrixColors[2][0] = (bMax > matrixRainbowChannelSpread) ? bMax - matrixRainbowChannelSpread : 0;
+    matrixColors[2][1] = bMax;
+    matrixColors[3][0] = 0;
+    matrixColors[3][1] = 0;
   }
 
   // Loop through all rain columns.
@@ -2385,6 +2420,10 @@ void displayUserSelectedMode() {
 
     case 15: // Pause fireflies.
       fireflyStart();
+      break;
+
+    case 16: // Special matrix (rainbow).
+      makeItRain();
       break;
 
     default:

@@ -377,7 +377,16 @@ uint16_t githubCells = 0;                         // Actual length of the curren
 uint8_t githubGrid[githubMaxCells];               // Flat, index = week*7+day.
 const uint8_t githubDays = 7;
 const uint8_t githubDayBlock = 4;                 // Rows per day-square AND columns per week.
-const uint8_t githubTopMargin = 2;                // (32 - 7*4) / 2.
+// The wall is 4 panels stacked vertically, 8 rows each, with a permanent
+// physical strut between every panel (rows never scroll, unlike columns, so
+// a block that straddles one is sliced in half on every single frame). 7
+// days * githubDayBlock leaves a remainder of 4 rows against the 32-row
+// chart; a margin that isn't a multiple of githubDayBlock (the old value, 2)
+// offsets every day-block out of alignment with the 8-row panels, so every
+// other day straddles a strut. 0 keeps every block inside one panel-half --
+// the remainder can't split evenly (2 isn't a multiple of 4), so it all
+// lands at the bottom, leaving Sunday flush with the top edge.
+const uint8_t githubTopMargin = 0;
 uint32_t githubScrollOffset = 0;                  // Position in the scroll, in screen-columns.
 unsigned long githubScrollLastTime = 0;
 const uint16_t githubScrollInterval = 1000;       // ms per 1-column shift -- slow ambient crawl.

@@ -1052,15 +1052,25 @@ void processGithub(char * strtokIndex) {
     return;
   }
 
+  // Brightness-only updates (see app.py's repaint()) resend this exact same
+  // command with an unchanged grid -- only the trailing brightness digits
+  // differ. Comparing before overwriting lets those pass through without
+  // touching the scroll; only a genuinely new grid (a new username, or a
+  // fresh week rolling on) restarts it, since an old offset may not even be
+  // valid against a different grid's length.
+  boolean gridChanged = (length != githubCells);
   for (uint16_t i = 0; i < length; i++) {
     uint8_t level = strtokIndex[i] - '0';
-    githubGrid[i] = (level <= 4) ? level : 0;
+    level = (level <= 4) ? level : 0;
+    if (!gridChanged && level != githubGrid[i]) {
+      gridChanged = true;
+    }
+    githubGrid[i] = level;
   }
   githubCells = length;
-  // A new grid invalidates the old scroll position -- always restart the
-  // loop from the oldest week rather than an offset that may not even be
-  // valid against the new grid's length.
-  githubScrollOffset = 0;
+  if (gridChanged) {
+    githubScrollOffset = 0;
+  }
 
   strtokIndex = strtok(NULL, ",");
   githubFlags = (strtokIndex == NULL) ? 0 : atoi(strtokIndex);

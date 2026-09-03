@@ -2458,6 +2458,14 @@ void spriteShow() {
    githubDayBlock screen-columns; the visible 32 columns show chartWidth /
    githubDayBlock = 8 weeks at a time.
 
+   Only the leading (githubDayBlock - 1) rows/columns of each cell are
+   actually lit -- the trailing row and column are left dark as a 1px gap, so
+   adjacent cells read as distinct squares instead of blending into one solid
+   blob. The gap is carved out of each cell's own footprint rather than
+   inserted between cells, so it costs no extra column: a week is still
+   exactly githubDayBlock screen-columns, the same 8 weeks are still visible
+   at once, and no cell's data is ever split across the gap or hidden by it.
+
    Advances githubScrollOffset on its own clock (~1 column/second), same
    shape as fireStarter()/fireflyStart() owning their own animation state --
    no server round-trip per frame. When the scroll hasn't advanced this pass,
@@ -2494,11 +2502,14 @@ void githubShow() {
 
   for (uint8_t col = 0; col < chartWidth; col++) {
     uint16_t screenCol = (githubScrollOffset + col) % totalScreenColumns;
+    if (screenCol % githubDayBlock == githubDayBlock - 1) {
+      continue; // Trailing column of each week -- left dark as a gap.
+    }
     uint16_t week = screenCol / githubDayBlock;
     for (uint8_t day = 0; day < githubDays; day++) {
       uint32_t color = stockScale(githubPalette[githubGrid[week * githubDays + day]], brightness);
       uint8_t top = githubTopMargin + day * githubDayBlock;
-      for (uint8_t sub = 0; sub < githubDayBlock; sub++) {
+      for (uint8_t sub = 0; sub < githubDayBlock - 1; sub++) { // Trailing row also left dark.
         setChartPixel(col, top + sub, color);
       }
     }

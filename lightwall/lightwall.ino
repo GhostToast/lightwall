@@ -397,9 +397,13 @@ uint8_t githubBrightness = 155;                   // Same starting value as stoc
 uint32_t githubPalette[5];                         // hsl2rgb(120,100,L), computed once in setup().
 // Lightness per contribution level 0 (none) .. 4 (max). Level 0 is true black
 // (0), not just dim -- a no-commit day has to match the untouched margin rows
-// exactly, or the grid never reads as blank anywhere. 1-4 dim like every other
-// close-range mode; starting values, easy to retune here.
-const uint8_t githubLevelLight[5] = {0, 8, 16, 26, 40};
+// exactly, or the grid never reads as blank anywhere. 1-4 spread wide enough
+// to read as distinct steps in person, not just on a monitor: the green
+// channel scales almost linearly with lightness at hue 120/sat 100 here, so
+// {12, 24, 35, 50} lands at green ~{61, 122, 178, 255} -- roughly even ~60-77
+// point jumps, topping out at full saturated green for the busiest days.
+// Mirrored in static/app.js's githubLevelLight; keep both in sync.
+const uint8_t githubLevelLight[5] = {0, 12, 24, 35, 50};
 
 const int ledsPerStrip = 128;
 #define NUM_LEDS 1024

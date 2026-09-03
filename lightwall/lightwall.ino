@@ -216,11 +216,11 @@ unsigned long hslLastTime = 0;
 byte fadeSteps = 32;
 byte fadeIndex = 0;
 uint16_t fadeInterval = 15;
-// The GitHub contribution grid is the longest command -- 224 grid characters
-// plus "<github," and ",F,NNN>" overhead is 239 bytes worst case -- so this
-// has to clear it with room to spare. Every other command, stock included, is
-// well under 60.
-const uint16_t buffSize = 260;
+// The GitHub contribution grid is the longest command -- up to githubMaxCells
+// grid characters plus "<github," and ",F,NNN>" overhead is ~3015 bytes worst
+// case -- so this has to clear it with room to spare. Every other command,
+// stock included, is well under 60.
+const uint16_t buffSize = 3100;
 char inputBuffer[buffSize];
 const char startMarker = '<';
 const char endMarker = '>';
@@ -364,24 +364,33 @@ uint8_t spriteBrightness = 155;
 byte spritesReceived = 0;
 byte spritesDirty = 0;
 
-// GitHub contribution calendar. One column per week, oldest left, this week
-// right, exactly like github.com's own grid. Each day is a 1-wide x 4-tall
-// block of chart rows rather than a single pixel, so the squares read as
-// chunky and GitHub-esque instead of a thin sparkline.
-const uint8_t githubWeeks = 32;
+// GitHub contribution calendar: an ambient, continuously scrolling piece
+// rather than a status readout. Day-cells are square -- githubDayBlock rows
+// AND githubDayBlock columns -- so one week is githubDayBlock screen-columns
+// wide, not one. The server sends however much lifetime history it fetched
+// (variable length, capped at githubMaxCells); the firmware owns the scroll
+// through it on its own clock, wrapping seamlessly from the oldest week back
+// to the newest, same shape as makeItRain()/fireflyStart() owning their own
+// animation state.
+const uint16_t githubMaxCells = 3000;             // ~8 years of weekly history -- headroom over the 5-year default.
+uint16_t githubCells = 0;                         // Actual length of the current grid, <= githubMaxCells.
+uint8_t githubGrid[githubMaxCells];               // Flat, index = week*7+day.
 const uint8_t githubDays = 7;
-const uint8_t githubDayBlock = 4;                 // Rows per day-square.
+const uint8_t githubDayBlock = 4;                 // Rows per day-square AND columns per week.
 const uint8_t githubTopMargin = 2;                // (32 - 7*4) / 2.
-const uint16_t githubCells = (uint16_t)githubWeeks * githubDays; // 224
-uint8_t githubGrid[githubCells];                  // Flat, index = week*7+day.
+uint32_t githubScrollOffset = 0;                  // Position in the scroll, in screen-columns.
+unsigned long githubScrollLastTime = 0;
+const uint16_t githubScrollInterval = 1000;       // ms per 1-column shift -- slow ambient crawl.
 byte githubReceived = 0;
 byte githubDirty = 0;
 uint8_t githubFlags = 0;
 uint8_t githubBrightness = 155;                   // Same starting value as stockBrightness.
 uint32_t githubPalette[5];                         // hsl2rgb(120,100,L), computed once in setup().
-// Lightness per contribution level 0 (none) .. 4 (max) -- dim like every
-// other close-range mode; starting values, easy to retune here.
-const uint8_t githubLevelLight[5] = {2, 8, 16, 26, 40};
+// Lightness per contribution level 0 (none) .. 4 (max). Level 0 is true black
+// (0), not just dim -- a no-commit day has to match the untouched margin rows
+// exactly, or the grid never reads as blank anywhere. 1-4 dim like every other
+// close-range mode; starting values, easy to retune here.
+const uint8_t githubLevelLight[5] = {0, 8, 16, 26, 40};
 
 const int ledsPerStrip = 128;
 #define NUM_LEDS 1024
@@ -1008,25 +1017,41 @@ void processSprites(char * strtokIndex) {
 /**
    Decode a GitHub contribution calendar frame:
 
-     <github,LLLLLLLL...L (224 chars),F,NNN>
+     <github,LLLLLLLL...L (grid chars, a multiple of 7),F,NNN>
 
-   L  224 contribution levels, one character per day ('0'-'4', GitHub's own
-      quartile bucketing), flat index = week*7+day, oldest week first
+   L  contribution levels, one character per day ('0'-'4', GitHub's own
+      quartile bucketing), flat index = week*7+day, oldest week first. Length
+      varies with however many years of history the server fetched.
    F  flag bitfield; bit 0 means the data is stale
    N  overall brightness, 5-255 as decimal
 
-   Single-digit-per-day encoding is what keeps 32 weeks of history inside one
+   Single-digit-per-day encoding is what keeps years of history inside one
    atomic frame instead of a chunked protocol with ordering state.
 */
 void processGithub(char * strtokIndex) {
   strtokIndex = strtok(NULL, ",");
-  if (strtokIndex == NULL || strlen(strtokIndex) < githubCells) {
+  if (strtokIndex == NULL) {
     return; // Truncated frame; keep showing whatever we had.
   }
-  for (uint16_t i = 0; i < githubCells; i++) {
+
+  // Trim to a whole number of weeks, guarding against a partial trailing
+  // week drawing garbage -- the server always sends whole weeks, but a
+  // corrupted transmission might not.
+  uint16_t length = strlen(strtokIndex);
+  length -= length % githubDays;
+  if (length == 0 || length > githubMaxCells) {
+    return;
+  }
+
+  for (uint16_t i = 0; i < length; i++) {
     uint8_t level = strtokIndex[i] - '0';
     githubGrid[i] = (level <= 4) ? level : 0;
   }
+  githubCells = length;
+  // A new grid invalidates the old scroll position -- always restart the
+  // loop from the oldest week rather than an offset that may not even be
+  // valid against the new grid's length.
+  githubScrollOffset = 0;
 
   strtokIndex = strtok(NULL, ",");
   githubFlags = (strtokIndex == NULL) ? 0 : atoi(strtokIndex);
@@ -2421,23 +2446,38 @@ void spriteShow() {
 }
 
 /**
-   GitHub contribution calendar: a grid of squares, darker for quiet days and
-   brighter green for busy ones, exactly like github.com's own profile page.
+   GitHub contribution calendar: a grid of square day-cells, darker for quiet
+   days and brighter green for busy ones, exactly like github.com's own
+   profile page -- but scrolled continuously through the user's full history
+   instead of showing one static window. Ambient motion, no status-reading:
+   the wall doesn't mark "current" vs "historical" weeks, it just crawls.
 
    The server already bucketed each day into one of GitHub's own 0-4 levels,
-   so there is no arithmetic here -- we only draw. One column per week, oldest
-   left, this week right; each day is a 1-wide x githubDayBlock-tall block
-   rather than a single pixel, so the squares read as chunky and GitHub-esque
-   instead of a thin sparkline.
+   so there is no arithmetic here beyond the scroll mapping. Day-cells are
+   square, githubDayBlock rows AND githubDayBlock columns, so one week is
+   githubDayBlock screen-columns; the visible 32 columns show chartWidth /
+   githubDayBlock = 8 weeks at a time.
 
-   Like Stock and Sprites, this is a still image. It repaints only when the
-   data actually changes.
+   Advances githubScrollOffset on its own clock (~1 column/second), same
+   shape as fireStarter()/fireflyStart() owning their own animation state --
+   no server round-trip per frame. When the scroll hasn't advanced this pass,
+   falls through to refreshStaticFrame() exactly like Stock/Sprites, so the
+   wall still recovers from a power blip well inside the scroll interval.
 */
 void githubShow() {
   if ( ! githubReceived ) {
     oneColor(0x00000010);
     return;
   }
+
+  uint16_t totalScreenColumns = (githubCells / githubDays) * githubDayBlock;
+
+  if ( (currentTime - githubScrollLastTime) >= githubScrollInterval ) {
+    githubScrollLastTime = currentTime;
+    githubScrollOffset = (githubScrollOffset + 1) % totalScreenColumns;
+    githubDirty = 1;
+  }
+
   if ( ! githubDirty ) {
     refreshStaticFrame();
     return;
@@ -2452,12 +2492,14 @@ void githubShow() {
     leds.setPixel(i, 0);
   }
 
-  for (uint8_t week = 0; week < githubWeeks; week++) {
+  for (uint8_t col = 0; col < chartWidth; col++) {
+    uint16_t screenCol = (githubScrollOffset + col) % totalScreenColumns;
+    uint16_t week = screenCol / githubDayBlock;
     for (uint8_t day = 0; day < githubDays; day++) {
       uint32_t color = stockScale(githubPalette[githubGrid[week * githubDays + day]], brightness);
       uint8_t top = githubTopMargin + day * githubDayBlock;
       for (uint8_t sub = 0; sub < githubDayBlock; sub++) {
-        setChartPixel(week, top + sub, color);
+        setChartPixel(col, top + sub, color);
       }
     }
   }

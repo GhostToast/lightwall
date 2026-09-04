@@ -2530,10 +2530,13 @@ void spriteShow() {
    Rows can't straddle a physical strut anymore (see githubTopMargin), but
    columns still can -- as the scroll advances, a week's 3 lit columns
    sometimes land mid-transit across one of the vertical struts between
-   panels, part on each side. Rather than draw that split fragment (which
-   reads as the color jumping across the dead gap), githubWeekStraddlesStrut()
-   hides the whole week-column for the few ticks that would happen, so a week
-   is only ever shown as a clean, unbroken square.
+   panels. That's drawn as-is, on purpose: chartCol only ever addresses real
+   LEDs, so the strut's own dead columns already go dark on their own, with
+   no code needed for it. A week wider than the 2px strut then reads as
+   partially sliding *behind* a physical divider -- a fragment visible on
+   each side at once -- which looks like real depth. Hiding the whole
+   week-column during that transit (tried first) replaced that with an
+   abrupt disappear/reappear, which read as a jump, not a slide.
 
    Advances githubScrollOffset on its own clock (~1 column/second), same
    shape as fireStarter()/fireflyStart() owning their own animation state --
@@ -2552,21 +2555,6 @@ void spriteShow() {
    still recovers from a power blip -- though in practice the glow's own
    ~30fps clock means that path is rarely taken.
 */
-// True if a week's lit columns [start, start + githubDayBlock - 2] would be
-// split across a physical strut -- i.e. some adjacent pair in that span maps
-// to physical columns that aren't actually adjacent. Compares real chartCol
-// positions rather than hardcoding boundary column numbers, so this stays
-// correct if the panel layout ever changes.
-boolean githubWeekStraddlesStrut(int16_t start) {
-  for (uint8_t i = 0; i < githubDayBlock - 2; i++) {
-    int16_t a = start + i;
-    int16_t b = a + 1;
-    if (a < 0 || b < 0 || a >= chartWidth || b >= chartWidth) continue;
-    if (chartCol[b] - chartCol[a] > 1) return true;
-  }
-  return false;
-}
-
 void githubShow() {
   if ( ! githubReceived ) {
     oneColor(0x00000010);
@@ -2608,10 +2596,6 @@ void githubShow() {
       uint8_t phase = screenCol % githubDayBlock;
       if (phase == githubDayBlock - 1) {
         continue; // Trailing column of each week -- left dark as a gap.
-      }
-      if (githubWeekStraddlesStrut((int16_t)col - (int16_t)phase)) {
-        continue; // Mid-transit across a vertical strut this tick -- hide the
-                  // whole week-column instead of showing the split fragment.
       }
       uint16_t week = screenCol / githubDayBlock;
       for (uint8_t day = 0; day < githubDays; day++) {

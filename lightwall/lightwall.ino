@@ -405,6 +405,25 @@ uint32_t githubPalette[5];                         // hsl2rgb(120,100,L), comput
 // Mirrored in static/app.js's githubLevelLight; keep both in sync.
 const uint8_t githubLevelLight[5] = {0, 12, 24, 35, 50};
 
+// The margin rows below the calendar (see githubTopMargin's comment -- rows
+// githubDays * githubDayBlock through chartHeight-1, 4 rows) are otherwise
+// unused, so they carry a smooth, independent "breathing" glow: a slow sine
+// pulse, unlike the grid's blunt 1px/sec scroll, sized by today's
+// contribution level. Sent explicitly by the server rather than read off the
+// grid's own last cell, which is the end of the current calendar week
+// (usually a future date), not today.
+const uint8_t githubBreathTopRow = githubDays * githubDayBlock; // 28.
+uint8_t githubTodayLevel = 0;                     // 0-4, from the server.
+uint32_t githubBreathPalette[5];                  // hsl2rgb(120,100,L), computed once in setup().
+// Lightness for the breathing glow, keyed by today's level. Unlike
+// githubLevelLight, level 0 isn't true black -- a faint idle breath even on
+// a quiet day reads as "still alive" rather than the effect just vanishing
+// most days (weekday-only contributors are quiet more often than not).
+const uint8_t githubBreathLevelLight[5] = {5, 15, 28, 42, 60};
+unsigned long githubBreathLastTime = 0;
+const uint16_t githubBreathInterval = 33;         // ~30fps -- smooth, unlike the grid's chunky scroll.
+const uint16_t githubBreathCycleMs = 6000;        // One full in-out breath; a slow, calm pace.
+
 const int ledsPerStrip = 128;
 #define NUM_LEDS 1024
 #define BRIGHTNESS 50
@@ -434,6 +453,7 @@ void setup() {
   leds.begin();
   for (uint8_t i = 0; i < 5; i++) {
     githubPalette[i] = hsl2rgb(120, 100, githubLevelLight[i]);
+    githubBreathPalette[i] = hsl2rgb(120, 100, githubBreathLevelLight[i]);
   }
   leds.show();
 }
@@ -1030,13 +1050,16 @@ void processSprites(char * strtokIndex) {
 /**
    Decode a GitHub contribution calendar frame:
 
-     <github,LLLLLLLL...L (grid chars, a multiple of 7),F,NNN>
+     <github,LLLLLLLL...L (grid chars, a multiple of 7),F,NNN,T>
 
    L  contribution levels, one character per day ('0'-'4', GitHub's own
       quartile bucketing), flat index = week*7+day, oldest week first. Length
       varies with however many years of history the server fetched.
    F  flag bitfield; bit 0 means the data is stale
    N  overall brightness, 5-255 as decimal
+   T  today's contribution level, '0'-'4' -- drives the breathing glow in
+      githubShow()'s margin rows. Sent explicitly because the grid's own last
+      cell is the end of the current calendar week, usually a future date.
 
    Single-digit-per-day encoding is what keeps years of history inside one
    atomic frame instead of a chunked protocol with ordering state.
@@ -1085,6 +1108,12 @@ void processGithub(char * strtokIndex) {
     if (requested < 5) requested = 5;
     if (requested > 255) requested = 255;
     githubBrightness = requested;
+  }
+
+  strtokIndex = strtok(NULL, ",");
+  if (strtokIndex != NULL) {
+    int lvl = atoi(strtokIndex);
+    githubTodayLevel = (lvl >= 0 && lvl <= 4) ? lvl : 0;
   }
 
   githubReceived = 1;
@@ -2499,9 +2528,21 @@ void spriteShow() {
 
    Advances githubScrollOffset on its own clock (~1 column/second), same
    shape as fireStarter()/fireflyStart() owning their own animation state --
-   no server round-trip per frame. When the scroll hasn't advanced this pass,
-   falls through to refreshStaticFrame() exactly like Stock/Sprites, so the
-   wall still recovers from a power blip well inside the scroll interval.
+   no server round-trip per frame.
+
+   The margin rows below the calendar (githubBreathTopRow..chartHeight-1)
+   carry a second, independent animation: a smooth sine "breathing" glow,
+   sized by today's contribution level, redrawn on its own fast (~30fps)
+   clock. It's intentionally decoupled from the grid's own redraw so the
+   grid can keep its blunt, chunky 1px/sec scroll while the glow stays
+   smooth -- mixing the two cadences in one redraw would force the grid to
+   either repaint 30x more often than it needs to (wasted work, no visual
+   difference) or make the glow stutter at 1fps (not a breath at all).
+
+   When neither the grid nor the glow needs to advance this pass, falls
+   through to refreshStaticFrame() exactly like Stock/Sprites, so the wall
+   still recovers from a power blip -- though in practice the glow's own
+   ~30fps clock means that path is rarely taken.
 */
 // True if a week's lit columns [start, start + githubDayBlock - 2] would be
 // split across a physical strut -- i.e. some adjacent pair in that span maps
@@ -2526,42 +2567,71 @@ void githubShow() {
 
   uint16_t totalScreenColumns = (githubCells / githubDays) * githubDayBlock;
 
+  boolean redrawGrid = githubDirty;
+  githubDirty = 0;
   if ( (currentTime - githubScrollLastTime) >= githubScrollInterval ) {
     githubScrollLastTime = currentTime;
     githubScrollOffset = (githubScrollOffset + 1) % totalScreenColumns;
-    githubDirty = 1;
+    redrawGrid = true;
   }
 
-  if ( ! githubDirty ) {
+  boolean redrawBreath = (currentTime - githubBreathLastTime) >= githubBreathInterval;
+
+  if ( ! redrawGrid && ! redrawBreath ) {
     refreshStaticFrame();
     return;
   }
-  githubDirty = 0;
 
   uint8_t brightness = (githubFlags & 1)
                        ? githubBrightness / stockStaleDivisor
                        : githubBrightness;
 
-  for (uint16_t i = 0; i < NUM_LEDS; i++) {
-    leds.setPixel(i, 0);
+  if ( redrawGrid ) {
+    // Only the calendar's own rows -- leaving the breathing margin alone so
+    // its glow isn't blanked out between its own, less frequent redraws.
+    for (uint8_t col = 0; col < chartWidth; col++) {
+      for (uint8_t row = 0; row < githubBreathTopRow; row++) {
+        setChartPixel(col, row, 0);
+      }
+    }
+
+    for (uint8_t col = 0; col < chartWidth; col++) {
+      uint16_t screenCol = (githubScrollOffset + col) % totalScreenColumns;
+      uint8_t phase = screenCol % githubDayBlock;
+      if (phase == githubDayBlock - 1) {
+        continue; // Trailing column of each week -- left dark as a gap.
+      }
+      if (githubWeekStraddlesStrut((int16_t)col - (int16_t)phase)) {
+        continue; // Mid-transit across a vertical strut this tick -- hide the
+                  // whole week-column instead of showing the split fragment.
+      }
+      uint16_t week = screenCol / githubDayBlock;
+      for (uint8_t day = 0; day < githubDays; day++) {
+        uint32_t color = stockScale(githubPalette[githubGrid[week * githubDays + day]], brightness);
+        uint8_t top = githubTopMargin + day * githubDayBlock;
+        for (uint8_t sub = 0; sub < githubDayBlock - 1; sub++) { // Trailing row also left dark.
+          setChartPixel(col, top + sub, color);
+        }
+      }
+    }
   }
 
-  for (uint8_t col = 0; col < chartWidth; col++) {
-    uint16_t screenCol = (githubScrollOffset + col) % totalScreenColumns;
-    uint8_t phase = screenCol % githubDayBlock;
-    if (phase == githubDayBlock - 1) {
-      continue; // Trailing column of each week -- left dark as a gap.
-    }
-    if (githubWeekStraddlesStrut((int16_t)col - (int16_t)phase)) {
-      continue; // Mid-transit across a vertical strut this tick -- hide the
-                // whole week-column instead of showing the split fragment.
-    }
-    uint16_t week = screenCol / githubDayBlock;
-    for (uint8_t day = 0; day < githubDays; day++) {
-      uint32_t color = stockScale(githubPalette[githubGrid[week * githubDays + day]], brightness);
-      uint8_t top = githubTopMargin + day * githubDayBlock;
-      for (uint8_t sub = 0; sub < githubDayBlock - 1; sub++) { // Trailing row also left dark.
-        setChartPixel(col, top + sub, color);
+  if ( redrawBreath ) {
+    githubBreathLastTime = currentTime;
+
+    // 0..2*PI over one full breath cycle, then (sin+1)/2 to fold it into a
+    // smooth 0..1 ramp -- up on the way in, down on the way out. A 0.2 floor
+    // keeps a faint pulse alive at the bottom of every breath rather than
+    // blinking fully off, which read as a glitch rather than a breath.
+    float phase = (currentTime % githubBreathCycleMs) / (float)githubBreathCycleMs * 6.283185f;
+    float wave = 0.2f + 0.8f * (sin(phase) + 1.0f) / 2.0f;
+    uint8_t waveBrightness = (uint8_t)(wave * 255.0f);
+    uint8_t combined = ((uint16_t)waveBrightness * brightness) >> 8;
+    uint32_t color = stockScale(githubBreathPalette[githubTodayLevel], combined);
+
+    for (uint8_t col = 0; col < chartWidth; col++) {
+      for (uint8_t row = githubBreathTopRow; row < chartHeight; row++) {
+        setChartPixel(col, row, color);
       }
     }
   }

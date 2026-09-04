@@ -427,13 +427,18 @@ unsigned long githubBreathLastTime = 0;
 const uint16_t githubBreathInterval = 66;         // ~15fps -- the ripple's own slow waves stay smooth well below the grid's old 30fps.
 // Ripple shape: two sine waves at different spatial/temporal frequencies,
 // summed and re-normalized to 0..1 -- a standard trick for a non-repeating,
-// organic-looking wave instead of one clean, mechanical sine.
+// organic-looking wave instead of one clean, mechanical sine. Weighted
+// 3:1 so the primary wave actually reaches close to its own extremes most
+// of the time -- two closer-to-equal weights cancel each other out more
+// often, which is why the ripple read as too subtle to notice at 0.6/0.4.
 const float githubRippleSpaceFreq1 = 0.35f;
 const float githubRippleSpaceFreq2 = 0.19f;
 const float githubRippleTimeFreq1 = 0.6f;   // radians/second.
 const float githubRippleTimeFreq2 = 0.37f;  // radians/second, opposite direction.
-const float githubRippleFloor = 0.15f;      // Never fully dark -- always some ripple visible.
-const uint8_t githubRippleLightness = 40;   // Peak HSL lightness for the ripple's base color.
+const float githubRippleWaveWeight1 = 0.75f;
+const float githubRippleWaveWeight2 = 0.25f;
+const float githubRippleFloor = 0.05f;      // Never fully dark, but a much deeper dip than before.
+const uint8_t githubRippleLightness = 50;   // Peak HSL lightness -- full saturated vividness (see hsl2rgb).
 
 const int ledsPerStrip = 128;
 #define NUM_LEDS 1024
@@ -2636,11 +2641,18 @@ void githubShow() {
   if ( redrawBreath ) {
     githubBreathLastTime = currentTime;
 
-    // Which week is at the left edge right now -- the ripple's color tracks
-    // that week's approximate calendar position, advancing as the scroll
-    // passes each one.
-    uint16_t leftWeek = (githubScrollOffset % totalScreenColumns) / githubDayBlock;
-    float hue = fmod(githubBaseHue + leftWeek * githubHueStepPerWeek, 360.0f);
+    // Where the left edge is right now, as a smoothly interpolated float
+    // rather than the integer githubScrollOffset (which only ticks once a
+    // second): the fractional term is how far through the *current* tick's
+    // interval we are, so the hue creeps continuously every ~66ms instead of
+    // stepping once per week. A whole week's worth of hue shift (~6.9
+    // degrees) spread continuously over its full 4-second transit is well
+    // under a degree per redraw -- imperceptible tick to tick, only visible
+    // as a slow drift over minutes.
+    float smoothOffset = githubScrollOffset +
+        (float)(currentTime - githubScrollLastTime) / (float)githubScrollInterval;
+    float weekPosition = fmod(smoothOffset, (float)totalScreenColumns) / (float)githubDayBlock;
+    float hue = fmod(githubBaseHue + weekPosition * githubHueStepPerWeek, 360.0f);
     uint32_t baseColor = hsl2rgb((unsigned int)hue, 100, githubRippleLightness);
 
     float t = currentTime / 1000.0f;
@@ -2649,8 +2661,8 @@ void githubShow() {
       // re-normalized to 0..1 -- an organic, non-repeating ripple instead of
       // one clean, mechanical sine. githubRippleFloor keeps it never fully
       // dark, so it always reads as a ripple rather than blinking off.
-      float wave = sin(col * githubRippleSpaceFreq1 + t * githubRippleTimeFreq1) * 0.6f
-                 + sin(col * githubRippleSpaceFreq2 - t * githubRippleTimeFreq2) * 0.4f;
+      float wave = sin(col * githubRippleSpaceFreq1 + t * githubRippleTimeFreq1) * githubRippleWaveWeight1
+                 + sin(col * githubRippleSpaceFreq2 - t * githubRippleTimeFreq2) * githubRippleWaveWeight2;
       float level = githubRippleFloor + (1.0f - githubRippleFloor) * (wave + 1.0f) / 2.0f;
       uint8_t waveBrightness = (uint8_t)(level * 255.0f);
       uint8_t combined = ((uint16_t)waveBrightness * brightness) >> 8;

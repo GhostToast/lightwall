@@ -407,22 +407,33 @@ const uint8_t githubLevelLight[5] = {0, 12, 24, 35, 50};
 
 // The margin rows below the calendar (see githubTopMargin's comment -- rows
 // githubDays * githubDayBlock through chartHeight-1, 4 rows) are otherwise
-// unused, so they carry a smooth, independent "breathing" glow: a slow sine
-// pulse, unlike the grid's blunt 1px/sec scroll, sized by today's
-// contribution level. Sent explicitly by the server rather than read off the
-// grid's own last cell, which is the end of the current calendar week
-// (usually a future date), not today.
+// unused, so they carry a smooth, independent ripple: a slow, two-wave sine
+// pattern across all 32 columns, unlike the grid's blunt 1px/sec scroll. A
+// single flat pulse (tried first) looked mechanical -- every pixel identical
+// at every instant -- so the ripple varies by *column* as well as time,
+// which reads as fluid regardless of how fast it's redrawn.
+//
+// Its hue is an abstract calendar cue rather than an activity readout: one
+// full trip around the color wheel per year of history, so with enough time
+// watching the wall a color becomes associated with a time of year (e.g.
+// "that teal is around September") without any on-wall text or numbers.
+// githubBaseHue is the hue for the OLDEST week currently in the grid (sent
+// by the server, since the firmware has no calendar of its own);
+// githubHueStepPerWeek advances it per week as the scroll passes each one.
 const uint8_t githubBreathTopRow = githubDays * githubDayBlock; // 28.
-uint8_t githubTodayLevel = 0;                     // 0-4, from the server.
-uint32_t githubBreathPalette[5];                  // hsl2rgb(120,100,L), computed once in setup().
-// Lightness for the breathing glow, keyed by today's level. Unlike
-// githubLevelLight, level 0 isn't true black -- a faint idle breath even on
-// a quiet day reads as "still alive" rather than the effect just vanishing
-// most days (weekday-only contributors are quiet more often than not).
-const uint8_t githubBreathLevelLight[5] = {5, 15, 28, 42, 60};
+uint16_t githubBaseHue = 0;                       // 0-359, from the server.
+const float githubHueStepPerWeek = 360.0f / (365.25f / 7.0f); // ~6.9 degrees/week.
 unsigned long githubBreathLastTime = 0;
-const uint16_t githubBreathInterval = 33;         // ~30fps -- smooth, unlike the grid's chunky scroll.
-const uint16_t githubBreathCycleMs = 6000;        // One full in-out breath; a slow, calm pace.
+const uint16_t githubBreathInterval = 66;         // ~15fps -- the ripple's own slow waves stay smooth well below the grid's old 30fps.
+// Ripple shape: two sine waves at different spatial/temporal frequencies,
+// summed and re-normalized to 0..1 -- a standard trick for a non-repeating,
+// organic-looking wave instead of one clean, mechanical sine.
+const float githubRippleSpaceFreq1 = 0.35f;
+const float githubRippleSpaceFreq2 = 0.19f;
+const float githubRippleTimeFreq1 = 0.6f;   // radians/second.
+const float githubRippleTimeFreq2 = 0.37f;  // radians/second, opposite direction.
+const float githubRippleFloor = 0.15f;      // Never fully dark -- always some ripple visible.
+const uint8_t githubRippleLightness = 40;   // Peak HSL lightness for the ripple's base color.
 
 const int ledsPerStrip = 128;
 #define NUM_LEDS 1024
@@ -453,7 +464,6 @@ void setup() {
   leds.begin();
   for (uint8_t i = 0; i < 5; i++) {
     githubPalette[i] = hsl2rgb(120, 100, githubLevelLight[i]);
-    githubBreathPalette[i] = hsl2rgb(120, 100, githubBreathLevelLight[i]);
   }
   leds.show();
 }
@@ -1050,16 +1060,15 @@ void processSprites(char * strtokIndex) {
 /**
    Decode a GitHub contribution calendar frame:
 
-     <github,LLLLLLLL...L (grid chars, a multiple of 7),F,NNN,T>
+     <github,LLLLLLLL...L (grid chars, a multiple of 7),F,NNN,HHH>
 
-   L  contribution levels, one character per day ('0'-'4', GitHub's own
-      quartile bucketing), flat index = week*7+day, oldest week first. Length
-      varies with however many years of history the server fetched.
-   F  flag bitfield; bit 0 means the data is stale
-   N  overall brightness, 5-255 as decimal
-   T  today's contribution level, '0'-'4' -- drives the breathing glow in
-      githubShow()'s margin rows. Sent explicitly because the grid's own last
-      cell is the end of the current calendar week, usually a future date.
+   L    contribution levels, one character per day ('0'-'4', GitHub's own
+        quartile bucketing), flat index = week*7+day, oldest week first.
+        Length varies with however many years of history the server fetched.
+   F    flag bitfield; bit 0 means the data is stale
+   N    overall brightness, 5-255 as decimal
+   HHH  hue (0-359, zero-padded) for the OLDEST week in the grid -- see
+        githubBaseHue's comment. Drives the ripple's color in the margin rows.
 
    Single-digit-per-day encoding is what keeps years of history inside one
    atomic frame instead of a chunked protocol with ordering state.
@@ -1112,8 +1121,8 @@ void processGithub(char * strtokIndex) {
 
   strtokIndex = strtok(NULL, ",");
   if (strtokIndex != NULL) {
-    int lvl = atoi(strtokIndex);
-    githubTodayLevel = (lvl >= 0 && lvl <= 4) ? lvl : 0;
+    int hue = atoi(strtokIndex);
+    githubBaseHue = (hue >= 0 && hue < 360) ? hue : 0;
   }
 
   githubReceived = 1;
@@ -2531,13 +2540,12 @@ void spriteShow() {
    no server round-trip per frame.
 
    The margin rows below the calendar (githubBreathTopRow..chartHeight-1)
-   carry a second, independent animation: a smooth sine "breathing" glow,
-   sized by today's contribution level, redrawn on its own fast (~30fps)
-   clock. It's intentionally decoupled from the grid's own redraw so the
-   grid can keep its blunt, chunky 1px/sec scroll while the glow stays
-   smooth -- mixing the two cadences in one redraw would force the grid to
-   either repaint 30x more often than it needs to (wasted work, no visual
-   difference) or make the glow stutter at 1fps (not a breath at all).
+   carry a second, independent animation: a slow two-wave ripple across all
+   32 columns (see the globals above), redrawn on its own clock decoupled
+   from the grid's own redraw -- mixing the two cadences in one redraw would
+   force the grid to repaint far more often than it needs to for no visual
+   gain. The ripple's hue is an abstract calendar cue (see githubBaseHue),
+   not an activity readout.
 
    When neither the grid nor the glow needs to advance this pass, falls
    through to refreshStaticFrame() exactly like Stock/Sprites, so the wall
@@ -2619,17 +2627,26 @@ void githubShow() {
   if ( redrawBreath ) {
     githubBreathLastTime = currentTime;
 
-    // 0..2*PI over one full breath cycle, then (sin+1)/2 to fold it into a
-    // smooth 0..1 ramp -- up on the way in, down on the way out. A 0.2 floor
-    // keeps a faint pulse alive at the bottom of every breath rather than
-    // blinking fully off, which read as a glitch rather than a breath.
-    float phase = (currentTime % githubBreathCycleMs) / (float)githubBreathCycleMs * 6.283185f;
-    float wave = 0.2f + 0.8f * (sin(phase) + 1.0f) / 2.0f;
-    uint8_t waveBrightness = (uint8_t)(wave * 255.0f);
-    uint8_t combined = ((uint16_t)waveBrightness * brightness) >> 8;
-    uint32_t color = stockScale(githubBreathPalette[githubTodayLevel], combined);
+    // Which week is at the left edge right now -- the ripple's color tracks
+    // that week's approximate calendar position, advancing as the scroll
+    // passes each one.
+    uint16_t leftWeek = (githubScrollOffset % totalScreenColumns) / githubDayBlock;
+    float hue = fmod(githubBaseHue + leftWeek * githubHueStepPerWeek, 360.0f);
+    uint32_t baseColor = hsl2rgb((unsigned int)hue, 100, githubRippleLightness);
 
+    float t = currentTime / 1000.0f;
     for (uint8_t col = 0; col < chartWidth; col++) {
+      // Two sine waves at different spatial/temporal frequencies, summed and
+      // re-normalized to 0..1 -- an organic, non-repeating ripple instead of
+      // one clean, mechanical sine. githubRippleFloor keeps it never fully
+      // dark, so it always reads as a ripple rather than blinking off.
+      float wave = sin(col * githubRippleSpaceFreq1 + t * githubRippleTimeFreq1) * 0.6f
+                 + sin(col * githubRippleSpaceFreq2 - t * githubRippleTimeFreq2) * 0.4f;
+      float level = githubRippleFloor + (1.0f - githubRippleFloor) * (wave + 1.0f) / 2.0f;
+      uint8_t waveBrightness = (uint8_t)(level * 255.0f);
+      uint8_t combined = ((uint16_t)waveBrightness * brightness) >> 8;
+      uint32_t color = stockScale(baseColor, combined);
+
       for (uint8_t row = githubBreathTopRow; row < chartHeight; row++) {
         setChartPixel(col, row, color);
       }

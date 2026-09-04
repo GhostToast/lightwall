@@ -2336,6 +2336,20 @@ inline void setChartPixel(uint8_t cx, uint8_t cy, uint32_t color) {
   setPixelSafe(remapXY(chartCol[cx], chartRow[cy]), color);
 }
 
+// Like setChartPixel, but takes a RAW physical column (0..maxWidth-1,
+// including the 2px-wide dead strut columns chartCol normally filters out)
+// instead of a logical chart column. Used only by GitHub mode's scroll (see
+// githubShow()): scrolling through logical columns never lands on a dead
+// column at all, so a week's cells always draw to 3 real LEDs no matter
+// where they sit -- which reads as jumping across the strut rather than
+// sliding behind it. Scrolling through raw columns instead means a cell
+// wider than the strut genuinely has some of its columns land on real dead
+// pixels as it passes, which remapXY already turns into NO_PIXEL for free.
+inline void setChartPixelRawCol(uint8_t rawCol, uint8_t cy, uint32_t color) {
+  if (rawCol >= maxWidth || cy >= chartHeight) return;
+  setPixelSafe(remapXY(rawCol, chartRow[cy]), color);
+}
+
 // Scale a color for the fade-in after a new frame, and for the stale dimming.
 inline uint32_t stockScale(uint32_t color, uint8_t brightness) {
   return makeColor(red(color), green(color), blue(color), white(color), brightness);
@@ -2528,15 +2542,21 @@ void spriteShow() {
    at once, and no cell's data is ever split across that gap.
 
    Rows can't straddle a physical strut anymore (see githubTopMargin), but
-   columns still can -- as the scroll advances, a week's 3 lit columns
-   sometimes land mid-transit across one of the vertical struts between
-   panels. That's drawn as-is, on purpose: chartCol only ever addresses real
-   LEDs, so the strut's own dead columns already go dark on their own, with
-   no code needed for it. A week wider than the 2px strut then reads as
-   partially sliding *behind* a physical divider -- a fragment visible on
-   each side at once -- which looks like real depth. Hiding the whole
-   week-column during that transit (tried first) replaced that with an
-   abrupt disappear/reappear, which read as a jump, not a slide.
+   columns still do, deliberately: the grid scrolls through RAW physical
+   columns (setChartPixelRawCol(), 0..maxWidth-1) rather than the logical
+   0..chartWidth-1 space chartCol[] already filters down to real LEDs only.
+   Scrolling through logical columns was tried first and never actually
+   worked right -- every logical index is always a real LED, so a week's 3
+   lit columns were always fully lit somewhere, just at physically distant
+   LEDs on either side of a strut, which read as jumping across the gap
+   rather than passing behind it. Scrolling through raw columns instead
+   means some of a week's columns genuinely land on the strut's dead
+   physical columns as it passes, and simply don't render there (remapXY
+   already returns NO_PIXEL for those) -- so a week 3 wide crossing a 2px
+   strut is visibly narrowed to 2, then 1, on the approaching side, and
+   grows back 1, then 2, on the far side as it emerges, never both sides at
+   once and never a full drop to zero. That reads as sliding behind a
+   physical divider instead of jumping over it.
 
    Advances githubScrollOffset on its own clock (~1 column/second), same
    shape as fireStarter()/fireflyStart() owning their own animation state --
@@ -2591,18 +2611,23 @@ void githubShow() {
       }
     }
 
-    for (uint8_t col = 0; col < chartWidth; col++) {
-      uint16_t screenCol = (githubScrollOffset + col) % totalScreenColumns;
-      uint8_t phase = screenCol % githubDayBlock;
+    // Scrolled through RAW physical columns (0..maxWidth-1), not logical
+    // ones -- see setChartPixelRawCol()'s comment. A week's virtual position
+    // in the data timeline is unchanged by this; only which physical column
+    // it happens to land on (real LED, or one of the dead strut columns)
+    // varies as the scroll advances.
+    for (uint8_t rawCol = 0; rawCol < maxWidth; rawCol++) {
+      uint16_t virtualPos = (githubScrollOffset + rawCol) % totalScreenColumns;
+      uint8_t phase = virtualPos % githubDayBlock;
       if (phase == githubDayBlock - 1) {
         continue; // Trailing column of each week -- left dark as a gap.
       }
-      uint16_t week = screenCol / githubDayBlock;
+      uint16_t week = virtualPos / githubDayBlock;
       for (uint8_t day = 0; day < githubDays; day++) {
         uint32_t color = stockScale(githubPalette[githubGrid[week * githubDays + day]], brightness);
         uint8_t top = githubTopMargin + day * githubDayBlock;
         for (uint8_t sub = 0; sub < githubDayBlock - 1; sub++) { // Trailing row also left dark.
-          setChartPixel(col, top + sub, color);
+          setChartPixelRawCol(rawCol, top + sub, color);
         }
       }
     }
